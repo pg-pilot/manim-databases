@@ -75,7 +75,6 @@ class MTable(VGroup, Labelable):
             columns.index(primary_key) if primary_key in columns else None
         )
 
-        self._row_height = self.style.cell["height"]
         self._column_widths = self._compute_column_widths(columns, rows)
 
         self.header: VGroup = self._build_header()
@@ -127,7 +126,13 @@ class MTable(VGroup, Labelable):
         return header_group
 
     def _append_row_internal(self, values: list[Any]) -> MRow:
-        """Add a row to the geometry without animations."""
+        """Add a row to the geometry without animations.
+
+        New rows are created at the original (unscaled) style size and then
+        scaled to match the existing geometry. This is necessary because the
+        table may have been scaled or transformed after construction, and
+        ``self.style.cell['width']`` no longer reflects the on-screen size.
+        """
         if len(values) != len(self.columns):
             raise ValueError(
                 f"Row has {len(values)} values but table has "
@@ -135,6 +140,18 @@ class MTable(VGroup, Labelable):
             )
 
         row = MRow(values, style=self.style, column_widths=self._column_widths)
+
+        # Scale the new row to match the current geometry of existing rows
+        # (or the header if this is the first data row). Without this, a
+        # post-construction ``.scale()`` call leaves new rows at the original
+        # size, breaking the column alignment.
+        reference_cell = (
+            self.rows[0].cells[0] if self.rows else self.header_cells[0]
+        )
+        new_cell = row.cells[0]
+        if new_cell.width > 0 and reference_cell.width != new_cell.width:
+            row.scale(reference_cell.width / new_cell.width)
+
         self._position_row_below_last(row)
         self.rows.append(row)
         self += row
@@ -180,12 +197,16 @@ class MTable(VGroup, Labelable):
         if not 0 <= row_index < len(self.rows):
             raise IndexError(f"Row index {row_index} out of range")
 
+        # Capture the removed row's actual height *before* removing it so the
+        # shift amount stays correct under any post-construction transforms.
+        shift_amount = self.rows[row_index].height
+
         removed = self.rows.pop(row_index)
         self -= removed
 
-        # Shift any rows below the deleted one upward by one row height.
         below = VGroup(*self.rows[row_index:])
-        below.shift([0, self._row_height, 0])
+        if len(below) > 0:
+            below.shift([0, shift_amount, 0])
         return self
 
     @override_animate(delete_row)
@@ -197,13 +218,14 @@ class MTable(VGroup, Labelable):
         if not 0 <= row_index < len(self.rows):
             raise IndexError(f"Row index {row_index} out of range")
 
+        shift_amount = self.rows[row_index].height
         removed = self.rows.pop(row_index)
         self -= removed
 
         below = VGroup(*self.rows[row_index:])
         anims = [FadeOut(removed)]
         if len(below) > 0:
-            anims.append(ApplyMethod(below.shift, [0, self._row_height, 0]))
+            anims.append(ApplyMethod(below.shift, [0, shift_amount, 0]))
         return Succession(*anims, **anim_args, group=VGroup(self, removed))
 
     def update_cell(
