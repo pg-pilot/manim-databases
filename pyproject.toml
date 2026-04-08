@@ -93,3 +93,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["manim_databases"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"manim_databases/fonts/CascadiaCode.ttf" = "manim_databases/fonts/CascadiaCode.ttf"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/manim_databases",
+    "/tests",
+    "/examples",
+    "/docs",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
