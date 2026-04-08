@@ -163,11 +163,17 @@ class MTable(VGroup, Labelable):
         row.next_to(anchor, DOWN, buff=0)
 
     def _tint_primary_key_column(self) -> None:
-        """Color the primary key column header to mark it visually."""
+        """Color the primary key column header to mark it visually.
+
+        The stroke width is kept the same as the surrounding cells. A wider
+        stroke would visually leak onto the top edge of adjacent data cells
+        because borders are shared at ``buff=0``.
+        """
         if self.primary_key_index is None:
             return
         pk_color = self.style.primary_key_color
-        self.header_cells[self.primary_key_index].set_stroke(pk_color, width=5)
+        header_cell = self.header_cells[self.primary_key_index]
+        header_cell.set_stroke(pk_color, width=header_cell.stroke_width)
         self.header_texts[self.primary_key_index].set_color(pk_color)
 
     # ── public API ────────────────────────────────────────────────────
