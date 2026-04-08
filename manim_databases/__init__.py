@@ -18,14 +18,16 @@ default styles render consistently regardless of system fonts.
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from manim import register_font
-
-# Register the bundled font so default styles work without requiring users
-# to install Cascadia Code system-wide.
+# Register the bundled font globally with Pango so default styles work
+# without requiring users to install Cascadia Code system-wide. We call
+# manimpango.register_font directly because manim.register_font is a
+# context manager that only registers within its scope.
 _FONT_PATH = Path(__file__).parent / "fonts" / "CascadiaCode.ttf"
 if _FONT_PATH.exists():
     try:
-        register_font(str(_FONT_PATH))
+        import manimpango
+
+        manimpango.register_font(str(_FONT_PATH))
     except Exception:
         # Silent fallback — Manim will use its default font if registration
         # fails (e.g. on a platform without fontconfig support).
