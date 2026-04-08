@@ -281,6 +281,14 @@ class MTable(VGroup, Labelable):
         self.rows[row_index].unhighlight()
         return self
 
+    @override_animate(unhighlight_row)
+    def _unhighlight_row_animation(
+        self, row_index: int, anim_args: dict | None = None
+    ) -> Animation:
+        if anim_args is None:
+            anim_args = {}
+        return self.rows[row_index]._unhighlight_animation(anim_args=anim_args)
+
     def get_row(self, row_index: int) -> MRow:
         """Return the :class:`MRow` at a given position.
 

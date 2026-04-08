@@ -1,4 +1,7 @@
-"""MTable basics: insert, update, delete, highlight.
+"""MTable basics: an order lifecycle story.
+
+Walks through a small orders table going through realistic database events:
+a new order arrives, an existing order ships, and a customer cancels.
 
 Run with:
     manim -ql examples/01_table_basic.py OrdersTable
@@ -14,9 +17,9 @@ class OrdersTable(Scene):
         table = MTable(
             columns=["id", "customer", "status", "total"],
             rows=[
-                [1, "alice", "shipped", 120],
-                [2, "bob", "pending", 85],
-                [3, "carol", "shipped", 200],
+                [1, "alice", "shipped",    120],
+                [2, "bob",   "pending",    85],
+                [3, "carol", "processing", 200],
             ],
             primary_key="id",
             style=MTableStyle.BLUE,
@@ -28,18 +31,19 @@ class OrdersTable(Scene):
         self.play(FadeIn(title), Create(table))
         self.wait(0.8)
 
-        # Insert a new row
-        self.play(table.animate.insert_row([4, "dave", "shipped", 55]))
-        self.wait(0.5)
+        # 1. A new order arrives — insert dave with pending status.
+        self.play(table.animate.insert_row([4, "dave", "pending", 55]))
+        self.wait(0.6)
 
-        # Highlight the second row
+        # 2. Bob's order ships. Highlight him first to focus the viewer,
+        #    perform the update, then unhighlight to clean up.
         self.play(table.animate.highlight_row(1))
-        self.wait(0.4)
-
-        # Update its status
+        self.wait(0.3)
         self.play(table.animate.update_cell(1, "status", "shipped"))
+        self.wait(0.3)
+        self.play(table.animate.unhighlight_row(1))
         self.wait(0.5)
 
-        # Delete the first row
-        self.play(table.animate.delete_row(0))
+        # 3. Carol cancels her order — delete the row.
+        self.play(table.animate.delete_row(2))
         self.wait(1)
