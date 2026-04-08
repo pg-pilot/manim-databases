@@ -4,6 +4,10 @@ manim-databases
 A Manim plugin for animating database concepts: tables, B-trees, query plans,
 WAL, replication topologies, lock contention, and more.
 
+.. image:: ../../assets/previews/mtable.gif
+   :alt: MTable preview
+   :align: center
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:

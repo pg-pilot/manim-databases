@@ -14,17 +14,25 @@ class MRow(VGroup, Highlightable):
     """A single row in an :class:`~manim_databases.m_table.m_table.MTable`.
 
     Each row is a :class:`VGroup` of cell rectangles paired with their value
-    text. The first cell is the highlight target so :meth:`highlight` paints
-    the whole row uniformly.
+    text. The whole row supports :meth:`highlight` via the
+    :class:`Highlightable` mixin so you can call ``row.highlight()`` to apply
+    a colored stroke around all of its cells.
+
+    A stable :class:`MRow` reference is what makes composition with other
+    mobjects (``MIndex``, ``MWal``, ``MLock``) work — those mobjects can hold
+    a row reference that survives subsequent inserts and deletes on the
+    parent table without going through brittle index lookups.
 
     Parameters
     ----------
     values : list
-        Cell values, one per column. Converted to strings for rendering.
+        Cell values, one per column. Each is converted to a string for
+        rendering.
     style : MTableStyle._DefaultStyle
         Style configuration controlling cell and value appearance.
     column_widths : list[float] or None
-        Per-column widths. If ``None``, every cell uses ``style.cell['width']``.
+        Per-column widths. When ``None``, every cell uses
+        ``style.cell['width']``.
     """
 
     def __init__(
@@ -49,7 +57,9 @@ class MRow(VGroup, Highlightable):
             if previous_cell is None:
                 cell.move_to([0, 0, 0])
             else:
-                # Place edge-to-edge so cell borders share a line.
+                # Touch the previous cell edge-to-edge so the borders share
+                # one line. Keep stroke widths uniform across cells in the
+                # parent table to avoid color bleeding at this seam.
                 cell.next_to(previous_cell, direction=[1, 0, 0], buff=0)
 
             text = Text(str(value), **style.value).move_to(cell)
@@ -60,13 +70,12 @@ class MRow(VGroup, Highlightable):
             self += text
             previous_cell = cell
 
-        # Highlight the entire row by enclosing all cells.
         if self.cells:
             row_box = VGroup(*self.cells)
             self._add_highlight(row_box)
 
     def get_cell(self, column_index: int) -> Rectangle:
-        """Return the rectangle for a column position."""
+        """Return the rectangle mobject for a column position."""
         return self.cells[column_index]
 
     def get_value_text(self, column_index: int) -> Text:
@@ -76,12 +85,8 @@ class MRow(VGroup, Highlightable):
     def set_cell_value(self, column_index: int, new_value: Any) -> MRow:
         """Replace a cell's value text in place.
 
-        Parameters
-        ----------
-        column_index : int
-            Position of the column to update.
-        new_value : Any
-            New value (will be coerced to string).
+        Uses :func:`~manim_databases.utils.utils.set_text` because Manim's
+        :meth:`Text.set_text` does not always rerender correctly.
         """
         old_text = self.value_texts[column_index]
         self -= old_text

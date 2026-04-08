@@ -9,7 +9,6 @@ from manim import (
     DOWN,
     Animation,
     ApplyMethod,
-    FadeIn,
     FadeOut,
     Indicate,
     Rectangle,
@@ -29,7 +28,9 @@ class MTable(VGroup, Labelable):
     """An animated database table.
 
     Renders columns and rows as a grid of cells with optional primary-key
-    highlighting and animated CRUD operations.
+    highlighting and animated CRUD operations. Designed so that other mobjects
+    in this library (``MIndex``, ``MWal``, ``MLock``) can hold stable
+    references to individual :class:`MRow` instances and animate against them.
 
     Parameters
     ----------
@@ -38,8 +39,8 @@ class MTable(VGroup, Labelable):
     rows : list[list], optional
         Initial row values. Each inner list must have ``len(columns)`` items.
     primary_key : str or None, optional
-        Name of the primary key column. When set, the column is tinted with
-        ``style.primary_key_color`` to make it visually distinct.
+        Name of the primary key column. When set, the column header text is
+        colored ``style.primary_key_color`` to mark it visually.
     style : MTableStyle._DefaultStyle, optional
         Style configuration. Default ``MTableStyle.DEFAULT``.
 
@@ -60,7 +61,7 @@ class MTable(VGroup, Labelable):
     def __init__(
         self,
         columns: list[str],
-        rows: list[list[Any]] = None,
+        rows: list[list[Any]] | None = None,
         primary_key: str | None = None,
         style: MTableStyle._DefaultStyle = MTableStyle.DEFAULT,
     ):
@@ -130,8 +131,8 @@ class MTable(VGroup, Labelable):
 
         New rows are created at the original (unscaled) style size and then
         scaled to match the existing geometry. This is necessary because the
-        table may have been scaled or transformed after construction, and
-        ``self.style.cell['width']`` no longer reflects the on-screen size.
+        table may have been scaled after construction; ``self.style.cell``
+        no longer reflects the on-screen size.
         """
         if len(values) != len(self.columns):
             raise ValueError(
@@ -142,9 +143,7 @@ class MTable(VGroup, Labelable):
         row = MRow(values, style=self.style, column_widths=self._column_widths)
 
         # Scale the new row to match the current geometry of existing rows
-        # (or the header if this is the first data row). Without this, a
-        # post-construction ``.scale()`` call leaves new rows at the original
-        # size, breaking the column alignment.
+        # (or the header if this is the first data row).
         reference_cell = (
             self.rows[0].cells[0] if self.rows else self.header_cells[0]
         )
@@ -163,17 +162,15 @@ class MTable(VGroup, Labelable):
         row.next_to(anchor, DOWN, buff=0)
 
     def _tint_primary_key_column(self) -> None:
-        """Color the primary key column header to mark it visually.
+        """Color the primary key header text to mark the column visually.
 
-        The stroke width is kept the same as the surrounding cells. A wider
-        stroke would visually leak onto the top edge of adjacent data cells
-        because borders are shared at ``buff=0``.
+        Only the text is colored — not the cell stroke. Modifying the stroke
+        of one cell in a tightly-packed grid causes color bleeding onto
+        adjacent cells at shared borders, regardless of stroke width.
         """
         if self.primary_key_index is None:
             return
         pk_color = self.style.primary_key_color
-        header_cell = self.header_cells[self.primary_key_index]
-        header_cell.set_stroke(pk_color, width=header_cell.stroke_width)
         self.header_texts[self.primary_key_index].set_color(pk_color)
 
     # ── public API ────────────────────────────────────────────────────
@@ -191,7 +188,7 @@ class MTable(VGroup, Labelable):
 
     @override_animate(insert_row)
     def _insert_row_animation(
-        self, values: list[Any], anim_args: dict = None
+        self, values: list[Any], anim_args: dict | None = None
     ) -> Animation:
         if anim_args is None:
             anim_args = {}
@@ -217,7 +214,7 @@ class MTable(VGroup, Labelable):
 
     @override_animate(delete_row)
     def _delete_row_animation(
-        self, row_index: int, anim_args: dict = None
+        self, row_index: int, anim_args: dict | None = None
     ) -> Animation:
         if anim_args is None:
             anim_args = {}
@@ -258,7 +255,7 @@ class MTable(VGroup, Labelable):
         row_index: int,
         column: int | str,
         new_value: Any,
-        anim_args: dict = None,
+        anim_args: dict | None = None,
     ) -> Indicate:
         if anim_args is None:
             anim_args = {}
@@ -273,7 +270,7 @@ class MTable(VGroup, Labelable):
 
     @override_animate(highlight_row)
     def _highlight_row_animation(
-        self, row_index: int, anim_args: dict = None
+        self, row_index: int, anim_args: dict | None = None
     ) -> Animation:
         if anim_args is None:
             anim_args = {}
@@ -285,7 +282,12 @@ class MTable(VGroup, Labelable):
         return self
 
     def get_row(self, row_index: int) -> MRow:
-        """Return the :class:`MRow` at a given position."""
+        """Return the :class:`MRow` at a given position.
+
+        The returned reference is stable across subsequent inserts and
+        deletes on the table — other mobjects can hold it without worrying
+        about row index invalidation.
+        """
         return self.rows[row_index]
 
     def get_cell_value(self, row_index: int, column: int | str) -> Any:
