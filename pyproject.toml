@@ -23,6 +23,12 @@ dependencies = [
     "manim>=0.19.0",
 ]
 
+[project.optional-dependencies]
+docs = [
+    "sphinx>=7.4.7",
+    "furo>=2024.8.6",
+]
+
 [project.urls]
 Homepage = "https://github.com/pg-pilot/manim-databases"
 Repository = "https://github.com/pg-pilot/manim-databases"
