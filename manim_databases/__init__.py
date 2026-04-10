@@ -43,6 +43,7 @@ from manim_databases.constants import (
     MWalStyle,
 )
 from manim_databases.m_btree.m_btree import MBTree
+from manim_databases.m_btree.m_btree_node import MBTreeNode
 from manim_databases.m_index.m_index import MIndex
 from manim_databases.m_lock.m_lock import MLock
 from manim_databases.m_query_plan.m_query_plan import MQueryPlan
@@ -59,6 +60,7 @@ __all__ = [
     "MTable",
     "MTableStyle",
     "MBTree",
+    "MBTreeNode",
     "MBTreeStyle",
     "MIndex",
     "MIndexStyle",

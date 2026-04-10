@@ -142,15 +142,23 @@ class MTableStyle:
 
 
 class MBTreeStyle:
-    """Style configuration for :class:`~manim_databases.m_btree.m_btree.MBTree`."""
+    """Style configuration for :class:`~manim_databases.m_btree.m_btree.MBTree`.
+
+    Attributes
+    ----------
+    DEFAULT, BLUE, PURPLE, GREEN
+        Predefined style variants matching the rest of the library.
+    """
 
     class _DefaultStyle:
+        """Default B-tree style — white outlines, neutral text."""
+
         def __init__(self):
             self.node: dict = {
                 "color": WHITE,
                 "stroke_width": 4,
-                "width": 1.6,
-                "height": 0.6,
+                "width": 1.0,
+                "height": 0.7,
             }
             self.key: dict = {
                 "color": WHITE,
@@ -161,10 +169,56 @@ class MBTreeStyle:
             }
             self.edge: dict = {
                 "color": GRAY,
-                "stroke_width": 5,
+                "stroke_width": 4,
+            }
+            # Layout
+            self.horizontal_gap: float = 0.5
+            self.vertical_gap: float = 1.2
+            # Animation
+            self.path_highlight_color: ManimColor = YELLOW
+            self.found_color: ManimColor = GREEN_B
+            self.split_color: ManimColor = PURPLE_B
+
+    class _BlueStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.node: dict = {
+                "color": BLUE_B,
+                "fill_color": BLUE_D,
+                "stroke_width": 4,
+                "fill_opacity": 0.4,
+                "width": 1.0,
+                "height": 0.7,
+            }
+
+    class _PurpleStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.node: dict = {
+                "color": PURPLE_B,
+                "fill_color": PURPLE_D,
+                "stroke_width": 4,
+                "fill_opacity": 0.4,
+                "width": 1.0,
+                "height": 0.7,
+            }
+
+    class _GreenStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.node: dict = {
+                "color": GREEN_B,
+                "fill_color": GREEN_D,
+                "stroke_width": 4,
+                "fill_opacity": 0.4,
+                "width": 1.0,
+                "height": 0.7,
             }
 
     DEFAULT = _DefaultStyle()
+    BLUE = _BlueStyle()
+    PURPLE = _PurpleStyle()
+    GREEN = _GreenStyle()
 
 
 class MIndexStyle:
