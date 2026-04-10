@@ -237,12 +237,13 @@ class MIndexStyle:
             self.tree: MBTreeStyle._DefaultStyle = MBTreeStyle.DEFAULT
             self.arrow: dict = {
                 "color": GRAY,
-                "stroke_width": 2,
-                "tip_length": 0.15,
-                "buff": 0.08,
+                "stroke_width": 1.5,
+                "stroke_opacity": 0.3,
+                "tip_length": 0.12,
+                "buff": 0.06,
             }
             # Layout
-            self.gap: float = 1.5  # horizontal gap between tree and table
+            self.gap: float = 1.2  # horizontal gap between tree and table
             # Animation
             self.path_highlight_color: ManimColor = YELLOW
             self.found_color: ManimColor = GREEN_B

@@ -29,8 +29,8 @@ class MIndex(VGroup, Labelable):
     """A visual database index that composes an MBTree with an MTable.
 
     The index holds a B-tree whose leaf keys are values from one column
-    of the table.  Each leaf key has a pointer arrow to the corresponding
-    :class:`MRow` in the table.
+    of the table.  Each leaf key has a curved pointer arrow to the
+    corresponding :class:`MRow` in the table.
 
     The hero animation is :meth:`lookup` — the search walks the B-tree,
     then follows the pointer arrow to highlight the matching row.
@@ -43,10 +43,12 @@ class MIndex(VGroup, Labelable):
     column : str
         Column name whose values become the B-tree keys.
     name : str, optional
-        Human-readable index name (e.g. ``"idx_orders_total"``).  Used
-        only for labels; does not affect behaviour.
+        Human-readable index name (e.g. ``"idx_orders_total"``).
     order : int, optional
         B-tree order.  Default ``4``.
+    max_tree_width : float, optional
+        Maximum width for the B-tree.  When the tree grows past this
+        (e.g. after splits), it auto-scales to fit.  Default ``4.5``.
     style : MIndexStyle._DefaultStyle, optional
         Style configuration.
 
@@ -64,6 +66,7 @@ class MIndex(VGroup, Labelable):
         column: str,
         name: str | None = None,
         order: int = 4,
+        max_tree_width: float = 4.5,
         style: MIndexStyle._DefaultStyle = MIndexStyle.DEFAULT,
     ):
         super().__init__()
@@ -77,7 +80,12 @@ class MIndex(VGroup, Labelable):
 
         # Build the B-tree from column values.
         keys = [row.values[col_index] for row in table.rows]
-        self.tree = MBTree(order=order, keys=keys, style=self.style.tree)
+        self.tree = MBTree(
+            order=order,
+            keys=keys,
+            style=self.style.tree,
+            max_width=max_tree_width,
+        )
         self += self.tree
 
         # Map key value → MRow for pointer arrows.
@@ -88,7 +96,6 @@ class MIndex(VGroup, Labelable):
 
         # Arrows from leaf cells to table rows.
         self._arrows: list[Arrow] = []
-        self._build_arrows()
 
     # ── construction ─────────────────────────────────────────────────
 
@@ -99,12 +106,14 @@ class MIndex(VGroup, Labelable):
         column: str,
         name: str | None = None,
         order: int = 4,
+        max_tree_width: float = 4.5,
         style: MIndexStyle._DefaultStyle = MIndexStyle.DEFAULT,
     ) -> MIndex:
         """Build an index from an existing table and column.
 
         This is the primary construction API.  The index is positioned to
-        the left of the table with pointer arrows drawn automatically.
+        the left of the table with curved pointer arrows drawn
+        automatically.
 
         Parameters
         ----------
@@ -116,10 +125,18 @@ class MIndex(VGroup, Labelable):
             Index name for labelling.
         order : int, optional
             B-tree order.  Default ``4``.
+        max_tree_width : float, optional
+            Maximum tree width before auto-scaling.  Default ``4.5``.
         style : MIndexStyle._DefaultStyle, optional
             Style configuration.
         """
-        index = cls(table, column, name=name, order=order, style=style)
+        index = cls(
+            table, column,
+            name=name,
+            order=order,
+            max_tree_width=max_tree_width,
+            style=style,
+        )
         index._position_beside_table()
         index._rebuild_arrows()
         return index
@@ -130,8 +147,13 @@ class MIndex(VGroup, Labelable):
         """Place the tree to the left of the table with a gap."""
         self.tree.next_to(self.table, direction=[-1, 0, 0], buff=self.style.gap)
 
-    def _build_arrows(self) -> None:
-        """Create arrows from leaf B-tree cells to their matching table rows."""
+    def _rebuild_arrows(self) -> None:
+        """Remove all arrows and recreate them from current positions."""
+        for arrow in self._arrows:
+            if arrow in self.submobjects:
+                self -= arrow
+        self._arrows = []
+
         if self.tree._root is None:
             return
 
@@ -146,24 +168,31 @@ class MIndex(VGroup, Labelable):
                 self._arrows.append(arrow)
                 self += arrow
 
-    def _rebuild_arrows(self) -> None:
-        """Remove all arrows and recreate them from current positions."""
-        for arrow in self._arrows:
-            if arrow in self.submobjects:
-                self -= arrow
-        self._arrows = []
-        self._build_arrows()
+    def _make_arrow(self, node, key_index: int, row: MRow) -> Arrow:
+        """Build a curved arrow from a B-tree leaf cell to a table row.
 
-    def _make_arrow(
-        self, node, key_index: int, row: MRow
-    ) -> Arrow:
-        """Build an arrow from a B-tree leaf cell to a table row."""
+        The arrow curves based on the vertical delta between source and
+        target — arrows that go UP curve one way, arrows that go DOWN
+        curve the other.  This naturally prevents parallel arrows from
+        crossing each other.
+        """
         cell = node.cells[key_index]
         start = cell.get_right()
         end = row.get_left()
+
+        # Curve based on vertical distance: arrows going to rows far
+        # above/below curve more, and in opposite directions.
+        delta_y = float(end[1] - start[1])
+        path_arc = -delta_y * 0.4
+
         return Arrow(
             start, end,
-            **self.style.arrow,
+            path_arc=path_arc,
+            stroke_width=self.style.arrow["stroke_width"],
+            stroke_opacity=self.style.arrow["stroke_opacity"],
+            color=self.style.arrow["color"],
+            tip_length=self.style.arrow["tip_length"],
+            buff=self.style.arrow["buff"],
         )
 
     # ── lookup ───────────────────────────────────────────────────────
@@ -179,9 +208,9 @@ class MIndex(VGroup, Labelable):
         """Animated lookup: search the B-tree, then follow the pointer.
 
         1. Walk the B-tree search path, highlighting each comparison key.
-        2. Highlight the pointer arrow from the found leaf to the table row.
+        2. Flash a bright version of the pointer arrow.
         3. Highlight the matching row in the table.
-        4. Fade everything out.
+        4. Fade everything out cleanly.
         """
         if anim_args is None:
             anim_args = {}
@@ -201,41 +230,42 @@ class MIndex(VGroup, Labelable):
                 if is_last and key_index is not None
                 else self.style.path_highlight_color
             )
-            target = node if key_index is None else node.get_key_target(key_index)
+            target = (
+                node if key_index is None else node.get_key_target(key_index)
+            )
             overlay = SurroundingRectangle(
                 target, color=color, stroke_width=5, buff=0.05
             )
             anims.append(
                 Succession(
-                    FadeIn(overlay, run_time=0.2),
-                    Wait(0.25),
-                    FadeOut(overlay, run_time=0.2),
+                    FadeIn(overlay, run_time=0.15),
+                    Wait(0.2),
+                    FadeOut(overlay, run_time=0.15),
                 )
             )
 
-        # Phase 2: find the pointer arrow and highlight it + the row.
+        # Phase 2: bright arrow flash + row highlight.
         row = self._key_to_row.get(value)
         arrow = self._find_arrow_for_key(value)
         if row is not None and arrow is not None:
-            # Highlight the arrow
-            arrow_overlay = arrow.copy().set_color(self.style.found_color)
-            arrow_overlay.set_stroke(width=arrow.get_stroke_width() + 2)
-            anims.append(
-                Succession(
-                    FadeIn(arrow_overlay, run_time=0.2),
-                    Wait(0.3),
-                    FadeOut(arrow_overlay, run_time=0.2),
-                )
+            # Create a bright copy of the arrow for the flash.
+            bright_arrow = arrow.copy()
+            bright_arrow.set_color(self.style.found_color)
+            bright_arrow.set_stroke(
+                width=self.style.arrow["stroke_width"] + 2,
+                opacity=1.0,
             )
-            # Highlight the row
+
             row_overlay = SurroundingRectangle(
                 row, color=self.style.found_color, stroke_width=5, buff=0.05
             )
             anims.append(
                 Succession(
-                    FadeIn(row_overlay, run_time=0.2),
+                    Create(bright_arrow, run_time=0.3),
+                    FadeIn(row_overlay, run_time=0.15),
                     Wait(0.5),
-                    FadeOut(row_overlay, run_time=0.3),
+                    FadeOut(bright_arrow, run_time=0.2),
+                    FadeOut(row_overlay, run_time=0.2),
                 )
             )
 
@@ -268,7 +298,7 @@ class MIndex(VGroup, Labelable):
         """Insert a key into the index pointing to the given row.
 
         Call this after inserting a row into the table to keep the index
-        in sync.
+        in sync.  The tree repositions and arrows rebuild automatically.
 
         Parameters
         ----------
@@ -279,6 +309,7 @@ class MIndex(VGroup, Labelable):
         """
         self._key_to_row[value] = row
         self.tree.insert(value)
+        self._position_beside_table()
         self._rebuild_arrows()
         return self
 
@@ -286,25 +317,17 @@ class MIndex(VGroup, Labelable):
     def _insert_key_animation(
         self, value: Any, row: MRow, anim_args: dict | None = None
     ) -> Animation:
-        """Animated index update: insert key into B-tree, draw new arrow."""
+        """Animated index update: insert key, reposition, redraw arrows."""
         if anim_args is None:
             anim_args = {}
 
         self._key_to_row[value] = row
+        # Use the tree's animated insert (smooth slide/split).
         self.tree.insert(value)
+        self._position_beside_table()
         self._rebuild_arrows()
 
-        # Find the new arrow and fade it in.
-        new_arrow = self._find_arrow_for_key(value)
-        if new_arrow is not None:
-            new_arrow_copy = new_arrow.copy()
-            return Succession(
-                Wait(0.1),
-                Create(new_arrow_copy, run_time=0.4),
-                **anim_args,
-            )
-
-        return Wait(0.3, **anim_args)
+        return Wait(0.5, **anim_args)
 
 
 __all__ = ["MIndex"]
