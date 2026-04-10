@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from copy import deepcopy
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 from manim import (
@@ -21,7 +22,6 @@ from manim import (
 from manim_databases.constants import MBTreeStyle
 from manim_databases.m_btree.m_btree_node import MBTreeNode
 from manim_databases.utils.utils import Labelable
-
 
 # ── leak-free animation helper ───────────────────────────────────────
 #
@@ -97,16 +97,16 @@ class _InsertTransition(Animation):
             mob.move_to(start + alpha * (end - start))
 
         # Fade in new cells / texts.
-        for mob, style in zip(self._new_mobs, self._new_mob_styles):
+        for mob, style in zip(self._new_mobs, self._new_mob_styles, strict=True):
             mob.set_stroke(opacity=alpha * style["stroke"])
             mob.set_fill(opacity=alpha * style["fill"])
 
         # Fade out old edges.
-        for edge, op in zip(self._old_edges, self._old_edge_stroke_op):
+        for edge, op in zip(self._old_edges, self._old_edge_stroke_op, strict=True):
             edge.set_stroke(opacity=(1 - alpha) * op)
 
         # Fade in new edges.
-        for edge, op in zip(self._new_edges, self._new_edge_stroke_op):
+        for edge, op in zip(self._new_edges, self._new_edge_stroke_op, strict=True):
             edge.set_stroke(opacity=alpha * op)
 
     def clean_up_from_scene(self, scene) -> None:
