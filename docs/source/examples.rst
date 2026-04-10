@@ -1,8 +1,48 @@
 Examples
 ========
 
-Runnable example scenes for each mobject live in the ``examples/`` directory of the source repo.
+Runnable example scenes live in the
+`examples/ <https://github.com/pg-pilot/manim-databases/tree/main/examples>`_
+directory of the source repo. Render any of them with:
+
+.. code-block:: bash
+
+   manim -ql examples/<file>.py <SceneName>
+
+Use ``-ql`` for fast 480p iteration, ``-qh`` for 1080p final renders.
+
+01 — Table basics
+-----------------
+
+**File:** ``examples/01_table_basic.py`` — Scene: ``OrdersTable``
+
+Demonstrates the core ``MTable`` workflow: creating a table with typed columns,
+then animating insert, update (with highlight/unhighlight), and delete operations.
+Models a realistic orders lifecycle (new order → ship → cancel).
 
 .. code-block:: bash
 
    manim -ql examples/01_table_basic.py OrdersTable
+
+02 — B-tree search and insert
+------------------------------
+
+**File:** ``examples/02_btree_search.py`` — Scene: ``BTreeSearchAndInsert``
+
+Walks through three operations on an order-4 B-tree:
+
+1. **Search** — highlights the comparison path from root to leaf.
+2. **Insert (no split)** — cells slide apart to make room.
+3. **Insert (with split)** — the overflowing leaf tears apart, the median
+   key floats up to the parent, and new edges draw in.
+
+.. code-block:: bash
+
+   manim -ql examples/02_btree_search.py BTreeSearchAndInsert
+
+03–06 — Stubs
+--------------
+
+``examples/03_query_plan.py`` through ``examples/06_lock_contention.py`` are
+placeholder scenes for mobjects that are not yet implemented. They document the
+intended API and will become runnable as each mobject lands.
