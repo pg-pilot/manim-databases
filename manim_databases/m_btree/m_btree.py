@@ -8,9 +8,11 @@ from typing import Any, Iterator
 import numpy as np
 from manim import (
     Animation,
+    AnimationGroup,
     FadeIn,
     FadeOut,
     Line,
+    MoveToTarget,
     Succession,
     SurroundingRectangle,
     VGroup,
@@ -99,6 +101,7 @@ class MBTree(VGroup, Labelable):
         self.max_width = max_width
         self._root: _BNode | None = None
         self._edges: list[Line] = []
+        self._temp_mobs: list = []
 
         if keys:
             for k in keys:
@@ -254,10 +257,20 @@ class MBTree(VGroup, Labelable):
             self._layout_subtree(child, child_center_x, child_y)
             x += w + self.style.horizontal_gap
 
+    # ── temp-mob cleanup ─────────────────────────────────────────────
+
+    def _cleanup_temp(self) -> None:
+        """Remove leftover temporary mobjects from prior animations."""
+        for mob in getattr(self, "_temp_mobs", []):
+            if mob in self.submobjects:
+                self -= mob
+        self._temp_mobs = []
+
     # ── edges ─────────────────────────────────────────────────────────
 
     def _draw_edges(self) -> None:
         """Re-create all edges from parents' gap bottoms to children's tops."""
+        self._cleanup_temp()
         for edge in self._edges:
             self -= edge
         self._edges = []
@@ -420,40 +433,94 @@ class MBTree(VGroup, Labelable):
     def _insert_animation(
         self, key: Any, anim_args: dict | None = None
     ) -> Animation:
-        """Animated insert.
+        """Animated insert using snapshot → mutate → diff → rewind → animate.
 
-        Mutates ``self`` synchronously, then returns a no-op
-        :class:`Wait` animation. The scene re-renders ``self`` in its
-        new state on the next frame.
+        1. Snapshot every cell/text position keyed by key value.
+        2. Run the synchronous insert (full mutation + re-layout).
+        3. Diff: keys present before slide from old → new positions;
+           truly new keys (the just-inserted one) fade in.
+        4. Edge transitions: old edges fade out, new edges fade in.
 
-        Why so plain? Manim's animation framework has two rough ways
-        to animate a mobject mutation: build a ``Transform`` between
-        the current state and a deep-copied target, or flash an
-        auxiliary mobject via ``Indicate``/``FadeIn``/etc. Both paths
-        interact poorly with a tree that is reshaped by the mutation
-        (new cells, reflowed layout, split nodes):
+        The animation plays in two phases:
 
-        - ``Transform`` requires matching submobject trees on both
-          sides, which an insert/split breaks.
-        - Any animation whose target is a *descendant* of the tree
-          (``Indicate(cell)``) leaks a top-level reference to that
-          cell into the scene via ``_add_animation_targets``. Manim
-          never cleans it up, so subsequent mutations that detach
-          the cell keep rendering it at a stale position.
-
-        The simplest safe choice is to mutate synchronously and return
-        a :class:`Wait` whose target is a dummy ``Mobject``. Nothing
-        leaks, and the next frame shows the mutated tree.
+        - **Phase 1** — existing cells slide to new positions while old
+          edges fade out. For splits this produces the "tear" effect
+          (left half slides left, right half slides right, median floats
+          up to the parent).
+        - **Phase 2** — the newly inserted key fades in at its gap, and
+          new edges draw in.
         """
         if anim_args is None:
             anim_args = {}
 
+        # First insert into an empty tree — just fade in the root node.
         if self._root is None:
             self.insert(key)
             return FadeIn(self._root.node, **anim_args)
 
+        # -- 1. Snapshot pre-mutation positions keyed by key value -----
+        old_key_pos: dict[Any, tuple[np.ndarray, np.ndarray]] = {}
+        for bnode in self._bfs():
+            for i, k in enumerate(bnode.keys):
+                old_key_pos[k] = (
+                    bnode.node.cells[i].get_center().copy(),
+                    bnode.node.key_texts[i].get_center().copy(),
+                )
+
+        old_edges = [e.copy() for e in self._edges]
+
+        # -- 2. Mutate (full insert + split cascade + re-layout) ------
         self.insert(key)
-        return Wait(0.5, **anim_args)
+
+        # -- 3. Diff: classify every post-mutation cell ----------------
+        move_anims: list[Animation] = []
+        fade_in_anims: list[Animation] = []
+
+        for bnode in self._bfs():
+            for i, k in enumerate(bnode.keys):
+                cell = bnode.node.cells[i]
+                text = bnode.node.key_texts[i]
+                final_cp = cell.get_center().copy()
+                final_tp = text.get_center().copy()
+
+                if k in old_key_pos:
+                    # Key existed before — rewind cell+text, then slide.
+                    old_cp, old_tp = old_key_pos[k]
+                    if not np.allclose(old_cp, final_cp, atol=1e-3):
+                        cell.move_to(old_cp)
+                        cell.generate_target()
+                        cell.target.move_to(final_cp)
+                        move_anims.append(MoveToTarget(cell))
+
+                        text.move_to(old_tp)
+                        text.generate_target()
+                        text.target.move_to(final_tp)
+                        move_anims.append(MoveToTarget(text))
+                else:
+                    # Truly new key — fade in at its final position.
+                    fade_in_anims.extend([FadeIn(cell), FadeIn(text)])
+
+        # -- 4. Edge transitions --------------------------------------
+        # Re-add old edges (copies) temporarily so they can fade out.
+        for edge in old_edges:
+            self += edge
+            self._temp_mobs.append(edge)
+
+        edge_out = [FadeOut(e) for e in old_edges]
+        edge_in = [FadeIn(e) for e in self._edges]
+
+        # -- 5. Assemble animation ------------------------------------
+        # Everything plays simultaneously: cells slide to new positions
+        # while old edges cross-fade to new edges and the new key fades
+        # in at its gap. Using a single AnimationGroup (rather than
+        # Succession) ensures that FadeIn.begin() is called at t=0
+        # which hides new cells immediately — no premature flash.
+        all_anims = move_anims + fade_in_anims + edge_out + edge_in
+
+        if not all_anims:
+            return Wait(0.5, **anim_args)
+
+        return AnimationGroup(*all_anims, **anim_args)
 
     # ── insert helpers ────────────────────────────────────────────────
 
