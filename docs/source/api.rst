@@ -52,6 +52,8 @@ Each mobject has a companion style class with ``DEFAULT``, ``BLUE``,
 
 .. autoclass:: manim_databases.MTableStyle
    :members:
+   :no-index:
 
 .. autoclass:: manim_databases.MBTreeStyle
    :members:
+   :no-index:
