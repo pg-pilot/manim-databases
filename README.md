@@ -62,12 +62,44 @@ manim -ql my_scene.py OrdersTable
 | Mobject | Status | Description |
 |---|---|---|
 | `MTable` | ✅ Implemented | Animated database table with typed columns, primary key, insert/delete/update |
-| `MBTree` | 🚧 Stub | B-tree with key insertion, node splits, search path highlighting |
+| `MBTree` | ✅ Implemented | B-tree with manual `from_structure` build, search path highlighting, animated insert with cascading splits |
 | `MIndex` | 🚧 Stub | Hash or B-tree index with key→row pointer animation |
 | `MQueryPlan` | 🚧 Stub | Execution plan tree (SeqScan, IndexScan, HashJoin, etc.) with cost flow |
 | `MWal` | 🚧 Stub | Append-only write-ahead log sequence |
 | `MReplicationTopology` | 🚧 Stub | Primary/replica graph with write propagation and lag |
 | `MLock` | 🚧 Stub | Row/table lock visualization with contention |
+
+### MBTree
+
+![MBTree preview](assets/previews/mbtree.gif)
+
+```python
+from manim import *
+from manim_databases import MBTree, MBTreeStyle
+
+class BTreeDemo(Scene):
+    def construct(self):
+        tree = MBTree.from_structure(
+            {
+                "keys": [10, 20],
+                "children": [
+                    {"keys": [3, 7]},
+                    {"keys": [12, 17]},
+                    {"keys": [25, 30]},
+                ],
+            },
+            order=4,
+            style=MBTreeStyle.BLUE,
+        )
+        self.play(Create(tree))
+
+        # Search animation highlights each compared key on the path.
+        self.play(tree.animate.search(17))
+
+        # Insertion handles cascading splits and re-layouts the tree.
+        self.play(tree.animate.insert(15))
+        self.play(tree.animate.insert(14))  # triggers a leaf split
+```
 
 ## Styles
 

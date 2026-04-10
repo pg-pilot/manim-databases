@@ -8,6 +8,10 @@ WAL, replication topologies, lock contention, and more.
    :alt: MTable preview
    :align: center
 
+.. image:: ../../assets/previews/mbtree.gif
+   :alt: MBTree preview
+   :align: center
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
