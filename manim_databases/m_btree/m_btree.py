@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from copy import deepcopy
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 from manim import (
@@ -21,6 +22,95 @@ from manim import (
 from manim_databases.constants import MBTreeStyle
 from manim_databases.m_btree.m_btree_node import MBTreeNode
 from manim_databases.utils.utils import Labelable
+
+# ── leak-free animation helper ───────────────────────────────────────
+#
+# Manim's Transform-based animations (MoveToTarget, FadeIn, FadeOut)
+# leak top-level scene references to their target mobjects.  When the
+# target is a *descendant* of the tree VGroup (a cell, a text, or an
+# edge), the leaked reference persists even after the tree detaches the
+# mobject during a later split — producing ghost duplicates.
+#
+# _InsertTransition is a single Animation on the tree itself.  It
+# interpolates positions and opacities directly, without any Transform
+# machinery and without touching the scene's mobject list.
+
+
+class _InsertTransition(Animation):
+    """Animate a structural tree change without leaking scene references.
+
+    Parameters
+    ----------
+    tree : MBTree
+        The tree mobject (already in the scene).
+    moved : list of (mob, start_pos, end_pos)
+        Cells/texts that slide from old to new positions.
+    new_mobs : list of mob
+        Cells/texts that should fade in from opacity 0.
+    old_edges : list of Line
+        Old edge copies to fade out (already re-added to the tree).
+    new_edges : list of Line
+        New edges to fade in.
+    """
+
+    def __init__(self, tree, moved, new_mobs, old_edges, new_edges, **kwargs):
+        self._moved = moved
+        self._new_mobs = new_mobs
+        self._old_edges = old_edges
+        self._new_edges = new_edges
+        # Saved opacities, filled in begin()
+        self._new_mob_styles: list[dict] = []
+        self._old_edge_stroke_op: list[float] = []
+        self._new_edge_stroke_op: list[float] = []
+        super().__init__(tree, **kwargs)
+
+    def begin(self) -> None:
+        # Save opacities of new mobs, then hide them.
+        for mob in self._new_mobs:
+            self._new_mob_styles.append(
+                {
+                    "stroke": float(mob.get_stroke_opacity()),
+                    "fill": float(mob.get_fill_opacity()),
+                }
+            )
+            mob.set_stroke(opacity=0)
+            mob.set_fill(opacity=0)
+
+        # Save and zero new-edge stroke opacities.
+        for edge in self._new_edges:
+            self._new_edge_stroke_op.append(float(edge.get_stroke_opacity()))
+            edge.set_stroke(opacity=0)
+
+        # Save old-edge stroke opacities (will fade to 0).
+        for edge in self._old_edges:
+            self._old_edge_stroke_op.append(float(edge.get_stroke_opacity()))
+
+        # Rewind moved mobs to their start positions.
+        for mob, start, _end in self._moved:
+            mob.move_to(start)
+
+        super().begin()
+
+    def interpolate_mobject(self, alpha: float) -> None:
+        # Slide moved cells / texts.
+        for mob, start, end in self._moved:
+            mob.move_to(start + alpha * (end - start))
+
+        # Fade in new cells / texts.
+        for mob, style in zip(self._new_mobs, self._new_mob_styles, strict=True):
+            mob.set_stroke(opacity=alpha * style["stroke"])
+            mob.set_fill(opacity=alpha * style["fill"])
+
+        # Fade out old edges.
+        for edge, op in zip(self._old_edges, self._old_edge_stroke_op, strict=True):
+            edge.set_stroke(opacity=(1 - alpha) * op)
+
+        # Fade in new edges.
+        for edge, op in zip(self._new_edges, self._new_edge_stroke_op, strict=True):
+            edge.set_stroke(opacity=alpha * op)
+
+    def clean_up_from_scene(self, scene) -> None:
+        self.interpolate_mobject(1)  # ensure final state
 
 
 class _BNode:
@@ -99,6 +189,7 @@ class MBTree(VGroup, Labelable):
         self.max_width = max_width
         self._root: _BNode | None = None
         self._edges: list[Line] = []
+        self._temp_mobs: list = []
 
         if keys:
             for k in keys:
@@ -254,10 +345,20 @@ class MBTree(VGroup, Labelable):
             self._layout_subtree(child, child_center_x, child_y)
             x += w + self.style.horizontal_gap
 
+    # ── temp-mob cleanup ─────────────────────────────────────────────
+
+    def _cleanup_temp(self) -> None:
+        """Remove leftover temporary mobjects from prior animations."""
+        for mob in getattr(self, "_temp_mobs", []):
+            if mob in self.submobjects:
+                self -= mob
+        self._temp_mobs = []
+
     # ── edges ─────────────────────────────────────────────────────────
 
     def _draw_edges(self) -> None:
         """Re-create all edges from parents' gap bottoms to children's tops."""
+        self._cleanup_temp()
         for edge in self._edges:
             self -= edge
         self._edges = []
@@ -420,40 +521,90 @@ class MBTree(VGroup, Labelable):
     def _insert_animation(
         self, key: Any, anim_args: dict | None = None
     ) -> Animation:
-        """Animated insert.
+        """Animated insert using snapshot → mutate → diff → rewind → animate.
 
-        Mutates ``self`` synchronously, then returns a no-op
-        :class:`Wait` animation. The scene re-renders ``self`` in its
-        new state on the next frame.
+        Uses :class:`_InsertTransition` — a single custom Animation on the
+        tree itself — to avoid Transform-based animations on tree
+        descendants.  Transform subclasses (``MoveToTarget``, ``FadeIn``,
+        ``FadeOut``) leak top-level scene references that persist after a
+        split detaches the mobject, producing ghost duplicates.
 
-        Why so plain? Manim's animation framework has two rough ways
-        to animate a mobject mutation: build a ``Transform`` between
-        the current state and a deep-copied target, or flash an
-        auxiliary mobject via ``Indicate``/``FadeIn``/etc. Both paths
-        interact poorly with a tree that is reshaped by the mutation
-        (new cells, reflowed layout, split nodes):
+        Steps:
 
-        - ``Transform`` requires matching submobject trees on both
-          sides, which an insert/split breaks.
-        - Any animation whose target is a *descendant* of the tree
-          (``Indicate(cell)``) leaks a top-level reference to that
-          cell into the scene via ``_add_animation_targets``. Manim
-          never cleans it up, so subsequent mutations that detach
-          the cell keep rendering it at a stale position.
-
-        The simplest safe choice is to mutate synchronously and return
-        a :class:`Wait` whose target is a dummy ``Mobject``. Nothing
-        leaks, and the next frame shows the mutated tree.
+        1. Snapshot every cell/text position keyed by key value.
+        2. Run the synchronous insert (full mutation + re-layout).
+        3. Diff: keys present before slide from old → new positions;
+           truly new keys (the just-inserted one) fade in.
+        4. Edge transitions: old edges fade out, new edges fade in.
         """
         if anim_args is None:
             anim_args = {}
 
+        # First insert into an empty tree.
         if self._root is None:
             self.insert(key)
-            return FadeIn(self._root.node, **anim_args)
+            return _InsertTransition(
+                self,
+                moved=[],
+                new_mobs=list(self._root.node.cells + self._root.node.key_texts),
+                old_edges=[],
+                new_edges=list(self._edges),
+                **anim_args,
+            )
 
+        # -- 1. Snapshot pre-mutation positions keyed by key value -----
+        old_key_pos: dict[Any, tuple[np.ndarray, np.ndarray]] = {}
+        for bnode in self._bfs():
+            for i, k in enumerate(bnode.keys):
+                old_key_pos[k] = (
+                    bnode.node.cells[i].get_center().copy(),
+                    bnode.node.key_texts[i].get_center().copy(),
+                )
+
+        old_edges = [e.copy() for e in self._edges]
+
+        # -- 2. Mutate (full insert + split cascade + re-layout) ------
         self.insert(key)
-        return Wait(0.5, **anim_args)
+
+        # -- 3. Diff: classify every post-mutation cell ----------------
+        moved: list[tuple] = []       # (mob, start_pos, end_pos)
+        new_mobs: list = []            # mobs that fade in
+
+        for bnode in self._bfs():
+            for i, k in enumerate(bnode.keys):
+                cell = bnode.node.cells[i]
+                text = bnode.node.key_texts[i]
+                final_cp = cell.get_center().copy()
+                final_tp = text.get_center().copy()
+
+                if k in old_key_pos:
+                    # Key existed before — slide from old to new position.
+                    old_cp, old_tp = old_key_pos[k]
+                    if not np.allclose(old_cp, final_cp, atol=1e-3):
+                        moved.append((cell, old_cp, final_cp))
+                        moved.append((text, old_tp, final_tp))
+                else:
+                    # Truly new key — fade in at its final position.
+                    new_mobs.extend([cell, text])
+
+        # -- 4. Edge transitions --------------------------------------
+        # Re-add old edges (copies) temporarily so they can fade out.
+        for edge in old_edges:
+            self += edge
+            self._temp_mobs.append(edge)
+
+        # -- 5. Build the transition animation ------------------------
+        if not moved and not new_mobs and not old_edges and not self._edges:
+            return Wait(0.5, **anim_args)
+
+        return _InsertTransition(
+            self,
+            moved=moved,
+            new_mobs=new_mobs,
+            old_edges=old_edges,
+            new_edges=list(self._edges),
+            **anim_args,
+        )
 
     # ── insert helpers ────────────────────────────────────────────────
 
