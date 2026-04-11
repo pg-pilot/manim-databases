@@ -29,15 +29,19 @@ MIndex
    :members:
    :undoc-members: False
 
+MQueryPlan
+^^^^^^^^^^
+
+.. autoclass:: manim_databases.MQueryPlan
+   :members:
+   :undoc-members: False
+
 Stubs
 ^^^^^
 
 The following mobjects are planned but not yet implemented. They export a
 stable public API that raises ``NotImplementedError`` — this keeps the
 namespace consistent from day one.
-
-.. autoclass:: manim_databases.MQueryPlan
-   :members:
 
 .. autoclass:: manim_databases.MWal
    :members:

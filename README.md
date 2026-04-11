@@ -79,7 +79,7 @@ class BTreeDemo(Scene):
 | `MTable` | Implemented | Animated database table with typed columns, primary key, insert/delete/update |
 | `MBTree` | Implemented | B-tree with search path highlighting, animated insert with cascading splits |
 | `MIndex` | Implemented | B-tree index with lookup animation and pointer arrows to table rows |
-| `MQueryPlan` | Stub | Execution plan tree (SeqScan, IndexScan, HashJoin, etc.) with cost flow |
+| `MQueryPlan` | Implemented | Execution plan tree with operator nodes, cost annotations, and animated data flow |
 | `MWal` | Stub | Append-only write-ahead log sequence |
 | `MReplicationTopology` | Stub | Primary/replica graph with write propagation and lag |
 | `MLock` | Stub | Row/table lock visualization with contention |
