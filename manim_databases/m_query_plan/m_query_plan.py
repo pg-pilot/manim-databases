@@ -268,11 +268,13 @@ class MQueryPlan(VGroup, Labelable):
     def _execute_animation(
         self, anim_args: dict | None = None
     ) -> Animation:
-        """Animate data flowing upward through the plan tree.
+        """Animate execution flowing upward through the plan tree.
 
-        Leaves highlight first (they scan), then data pulses up each
-        edge to the parent, which highlights in turn.  Cascades level
-        by level from the deepest leaves to the root.
+        Nodes light up level-by-level from leaves to root and **stay
+        lit** — the viewer sees the active frontier build up.  After
+        each level's nodes highlight, data pulses up the edges to the
+        next level.  Once the root lights up, all overlays hold briefly
+        then fade out together.
         """
         if anim_args is None:
             anim_args = {}
@@ -281,11 +283,12 @@ class MQueryPlan(VGroup, Labelable):
 
         levels = self._leaves_bottom_up()
         anims: list[Animation] = []
+        all_overlays: list[SurroundingRectangle] = []
 
         for level_nodes in levels:
-            level_anims: list[Animation] = []
+            # Phase A: light up every node at this level (simultaneously).
+            node_fade_ins: list[Animation] = []
             for pnode in level_nodes:
-                # Highlight this node.
                 overlay = SurroundingRectangle(
                     pnode.box,
                     color=self.style.execute_color,
@@ -293,27 +296,37 @@ class MQueryPlan(VGroup, Labelable):
                     buff=0.05,
                     corner_radius=0.1,
                 )
-                level_anims.append(
-                    Succession(
-                        FadeIn(overlay, run_time=0.15),
-                        Wait(0.25),
-                        FadeOut(overlay, run_time=0.15),
-                    )
-                )
+                all_overlays.append(overlay)
+                node_fade_ins.append(FadeIn(overlay, run_time=0.25))
 
-                # Pulse data up the edge to the parent.
+            if node_fade_ins:
+                anims.append(AnimationGroup(*node_fade_ins))
+
+            # Phase B: pulse data up edges from this level to parent.
+            edge_flashes: list[Animation] = []
+            for pnode in level_nodes:
                 if pnode.parent is not None:
                     edge = self._find_edge(pnode, pnode.parent)
                     if edge is not None:
                         flash = edge.copy()
                         flash.set_color(self.style.flow_color)
                         flash.set_stroke(width=edge.get_stroke_width() + 3)
-                        level_anims.append(
-                            ShowPassingFlash(flash, time_width=0.4, run_time=0.5)
+                        edge_flashes.append(
+                            ShowPassingFlash(
+                                flash, time_width=0.4, run_time=0.45
+                            )
                         )
+            if edge_flashes:
+                anims.append(AnimationGroup(*edge_flashes))
 
-            if level_anims:
-                anims.append(AnimationGroup(*level_anims))
+        # Hold the fully-lit state, then fade everything out.
+        if all_overlays:
+            anims.append(Wait(0.6))
+            anims.append(
+                AnimationGroup(
+                    *[FadeOut(o, run_time=0.3) for o in all_overlays]
+                )
+            )
 
         if not anims:
             return Wait(0.1, **anim_args)
