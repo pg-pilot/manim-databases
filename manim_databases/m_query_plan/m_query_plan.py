@@ -8,12 +8,7 @@ from copy import deepcopy
 from manim import (
     DOWN,
     Animation,
-    AnimationGroup,
     Arrow,
-    FadeIn,
-    FadeOut,
-    ShowPassingFlash,
-    Succession,
     SurroundingRectangle,
     Text,
     VGroup,
@@ -89,6 +84,140 @@ class _PNode:
 
     def is_leaf(self) -> bool:
         return not self.children
+
+
+# ── leak-free execute animation ──────────────────────────────────────
+
+
+class _ExecuteFlow(Animation):
+    """Progressively light up plan nodes from leaves to root.
+
+    A single Animation on the plan VGroup that manages overlay opacities
+    directly in ``interpolate_mobject``.  Avoids AnimationGroup /
+    Succession whose ``_setup_scene`` adds all overlays at t=0.
+
+    Timeline (mapped to alpha 0→1):
+
+    - **Active phase** (0 → 0.75): each level gets a slice.  Within a
+      level's slice, the first half fades in node overlays, the second
+      half flashes the upward edges yellow.
+    - **Hold phase** (0.75 → 0.88): everything stays lit.
+    - **Fade-out phase** (0.88 → 1.0): all overlays fade to 0 and are
+      removed from the plan VGroup.
+    """
+
+    _ACTIVE = 0.75
+    _HOLD_END = 0.88
+
+    def __init__(self, plan: MQueryPlan, **kwargs):
+        kwargs.setdefault("run_time", 3.0)
+        self._plan = plan
+        self._levels = plan._leaves_bottom_up()
+        self._n_levels = max(len(self._levels), 1)
+
+        # Pre-create overlays (invisible) and add to plan VGroup.
+        self._level_overlays: list[list[SurroundingRectangle]] = []
+        self._all_overlays: list[SurroundingRectangle] = []
+        for level_nodes in self._levels:
+            level_ovs = []
+            for pnode in level_nodes:
+                ov = SurroundingRectangle(
+                    pnode.box,
+                    color=plan.style.execute_color,
+                    stroke_width=4,
+                    buff=0.05,
+                    corner_radius=0.1,
+                )
+                ov.set_stroke(opacity=0)
+                plan += ov
+                level_ovs.append(ov)
+                self._all_overlays.append(ov)
+            self._level_overlays.append(level_ovs)
+
+        # Collect edges per level (child→parent arrows to flash).
+        self._level_edges: list[list[Arrow]] = []
+        self._edge_base_colors: dict[int, object] = {}
+        for level_nodes in self._levels:
+            edges = []
+            for pnode in level_nodes:
+                if pnode.parent is not None:
+                    edge = plan._find_edge(pnode, pnode.parent)
+                    if edge is not None:
+                        self._edge_base_colors[id(edge)] = edge.get_color()
+                        edges.append(edge)
+            self._level_edges.append(edges)
+
+        super().__init__(plan, **kwargs)
+
+    def interpolate_mobject(self, alpha: float) -> None:
+        active = self._ACTIVE
+        hold_end = self._HOLD_END
+
+        if alpha <= active:
+            # ── Active phase: light up level by level ────────────────
+            for i in range(self._n_levels):
+                level_start = (i / self._n_levels) * active
+                level_mid = ((i + 0.5) / self._n_levels) * active
+                level_end = ((i + 1) / self._n_levels) * active
+
+                # Node overlays: fade in during [level_start, level_mid].
+                if i < len(self._level_overlays):
+                    if alpha < level_start:
+                        t = 0.0
+                    elif alpha < level_mid:
+                        t = (alpha - level_start) / (level_mid - level_start)
+                    else:
+                        t = 1.0
+                    for ov in self._level_overlays[i]:
+                        ov.set_stroke(opacity=t)
+
+                # Edge flash: glow yellow during [level_mid, level_end].
+                if i < len(self._level_edges):
+                    for edge in self._level_edges[i]:
+                        base_color = self._edge_base_colors[id(edge)]
+                        if level_mid <= alpha < level_end:
+                            progress = (alpha - level_mid) / (
+                                level_end - level_mid
+                            )
+                            # Flash up then back: peak at progress=0.5.
+                            intensity = 1.0 - abs(2.0 * progress - 1.0)
+                            edge.set_color(
+                                self._plan.style.flow_color
+                            )
+                            edge.set_stroke(
+                                width=self._plan.style.edge["stroke_width"]
+                                + 3 * intensity,
+                            )
+                        else:
+                            edge.set_color(base_color)
+                            edge.set_stroke(
+                                width=self._plan.style.edge["stroke_width"],
+                            )
+
+        elif alpha <= hold_end:
+            # ── Hold phase: everything stays fully lit ───────────────
+            for ov in self._all_overlays:
+                ov.set_stroke(opacity=1.0)
+            # Restore edge colors.
+            for edges in self._level_edges:
+                for edge in edges:
+                    edge.set_color(self._edge_base_colors[id(edge)])
+                    edge.set_stroke(
+                        width=self._plan.style.edge["stroke_width"]
+                    )
+
+        else:
+            # ── Fade-out phase: all overlays fade together ───────────
+            t = (alpha - hold_end) / (1.0 - hold_end)
+            for ov in self._all_overlays:
+                ov.set_stroke(opacity=1.0 - t)
+
+    def clean_up_from_scene(self, scene) -> None:
+        # Ensure final state and remove overlays from the plan VGroup.
+        self.interpolate_mobject(1.0)
+        for ov in self._all_overlays:
+            if ov in self._plan.submobjects:
+                self._plan -= ov
 
 
 # ── MQueryPlan ───────────────────────────────────────────────────────
@@ -270,68 +399,20 @@ class MQueryPlan(VGroup, Labelable):
     ) -> Animation:
         """Animate execution flowing upward through the plan tree.
 
-        Nodes light up level-by-level from leaves to root and **stay
-        lit** — the viewer sees the active frontier build up.  After
-        each level's nodes highlight, data pulses up the edges to the
-        next level.  Once the root lights up, all overlays hold briefly
-        then fade out together.
+        Uses a custom :class:`_ExecuteFlow` animation that directly
+        manages overlay opacities — avoiding Succession/AnimationGroup
+        whose ``_setup_scene`` adds all overlays to the scene at t=0.
+
+        Nodes light up level-by-level from leaves to root and stay lit.
+        Between levels, edges briefly glow to show data flowing upward.
+        Once the root lights up, everything holds then fades out.
         """
         if anim_args is None:
             anim_args = {}
         if self._root is None:
             return Wait(0.1, **anim_args)
 
-        levels = self._leaves_bottom_up()
-        anims: list[Animation] = []
-        all_overlays: list[SurroundingRectangle] = []
-
-        for level_nodes in levels:
-            # Phase A: light up every node at this level (simultaneously).
-            node_fade_ins: list[Animation] = []
-            for pnode in level_nodes:
-                overlay = SurroundingRectangle(
-                    pnode.box,
-                    color=self.style.execute_color,
-                    stroke_width=4,
-                    buff=0.05,
-                    corner_radius=0.1,
-                )
-                all_overlays.append(overlay)
-                node_fade_ins.append(FadeIn(overlay, run_time=0.25))
-
-            if node_fade_ins:
-                anims.append(AnimationGroup(*node_fade_ins))
-
-            # Phase B: pulse data up edges from this level to parent.
-            edge_flashes: list[Animation] = []
-            for pnode in level_nodes:
-                if pnode.parent is not None:
-                    edge = self._find_edge(pnode, pnode.parent)
-                    if edge is not None:
-                        flash = edge.copy()
-                        flash.set_color(self.style.flow_color)
-                        flash.set_stroke(width=edge.get_stroke_width() + 3)
-                        edge_flashes.append(
-                            ShowPassingFlash(
-                                flash, time_width=0.4, run_time=0.45
-                            )
-                        )
-            if edge_flashes:
-                anims.append(AnimationGroup(*edge_flashes))
-
-        # Hold the fully-lit state, then fade everything out.
-        if all_overlays:
-            anims.append(Wait(0.6))
-            anims.append(
-                AnimationGroup(
-                    *[FadeOut(o, run_time=0.3) for o in all_overlays]
-                )
-            )
-
-        if not anims:
-            return Wait(0.1, **anim_args)
-
-        return Succession(*anims, **anim_args)
+        return _ExecuteFlow(self, **anim_args)
 
 
 __all__ = ["MQueryPlan"]
