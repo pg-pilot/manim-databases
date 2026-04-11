@@ -57,9 +57,24 @@ column.  Demonstrates:
 
    manim -ql examples/03_index_lookup.py IndexLookup
 
-04–06 — Stubs
+04 — Query execution plan
+--------------------------
+
+**File:** ``examples/03_query_plan.py`` — Scene: ``QueryPlanDemo``
+
+Builds a PostgreSQL ``EXPLAIN (FORMAT JSON)`` tree with Aggregate → Hash Join
+→ (Seq Scan, Hash → Index Scan).  Demonstrates:
+
+1. **Dynamic node rendering** — operator type, relation name, cost/rows.
+2. **Animated execution** — leaves scan first, data pulses upward through
+   edges to parent nodes, cascading to the root.
+
+.. code-block:: bash
+
+   manim -ql examples/04_query_plan.py QueryPlanDemo
+
+05–06 — Stubs
 --------------
 
-``examples/04_wal_append.py`` through ``examples/06_lock_contention.py`` are
-placeholder scenes for mobjects that are not yet implemented. They document the
-intended API and will become runnable as each mobject lands.
+``examples/05_replication.py`` and ``examples/06_lock_contention.py`` are
+placeholder scenes for mobjects that are not yet implemented.

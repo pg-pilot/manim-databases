@@ -270,35 +270,87 @@ class MIndexStyle:
 
 
 class MQueryPlanStyle:
-    """Style configuration for :class:`~manim_databases.m_query_plan.m_query_plan.MQueryPlan`."""
+    """Style configuration for :class:`~manim_databases.m_query_plan.m_query_plan.MQueryPlan`.
+
+    Attributes
+    ----------
+    DEFAULT, BLUE, PURPLE, GREEN
+        Predefined style variants matching the rest of the library.
+    """
 
     class _DefaultStyle:
         def __init__(self):
             self.node: dict = {
                 "color": WHITE,
-                "stroke_width": 4,
-                "width": 3.0,
-                "height": 1.0,
+                "stroke_width": 3,
+                "fill_opacity": 0,
             }
+            self.node_buff: float = 0.2  # padding around text inside node
             self.label: dict = {
                 "color": WHITE,
                 "font": "Cascadia Code",
-                "font_size": 20,
+                "font_size": 18,
                 "disable_ligatures": True,
                 "weight": BOLD,
+            }
+            self.detail: dict = {
+                "color": GRAY,
+                "font": "Cascadia Code",
+                "font_size": 14,
+                "disable_ligatures": True,
             }
             self.cost: dict = {
                 "color": YELLOW,
                 "font": "Cascadia Code",
-                "font_size": 16,
+                "font_size": 13,
                 "disable_ligatures": True,
             }
             self.edge: dict = {
                 "color": GRAY,
-                "stroke_width": 4,
+                "stroke_width": 3,
+            }
+            self.arrow_tip_length: float = 0.15
+            # Layout
+            self.horizontal_gap: float = 0.6
+            self.vertical_gap: float = 1.4
+            # Animation
+            self.execute_color: ManimColor = GREEN_B
+            self.flow_color: ManimColor = YELLOW
+
+    class _BlueStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.node = {
+                "color": BLUE_B,
+                "fill_color": BLUE_D,
+                "stroke_width": 3,
+                "fill_opacity": 0.3,
+            }
+
+    class _PurpleStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.node = {
+                "color": PURPLE_B,
+                "fill_color": PURPLE_D,
+                "stroke_width": 3,
+                "fill_opacity": 0.3,
+            }
+
+    class _GreenStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.node = {
+                "color": GREEN_B,
+                "fill_color": GREEN_D,
+                "stroke_width": 3,
+                "fill_opacity": 0.3,
             }
 
     DEFAULT = _DefaultStyle()
+    BLUE = _BlueStyle()
+    PURPLE = _PurpleStyle()
+    GREEN = _GreenStyle()
 
 
 class MWalStyle:

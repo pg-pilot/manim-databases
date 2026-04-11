@@ -46,6 +46,7 @@ tex/
 .coverage
 htmlcov/
 .tox/
+/tests/visual/frames
 
 # Docs
 docs/_build/
@@ -53,3 +54,4 @@ docs/build/
 
 # Devcontainer (managed externally)
 .devcontainer
+.claude
