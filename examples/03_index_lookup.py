@@ -87,15 +87,25 @@ class IndexLookup(Scene):
         self.play(table.animate.insert_row([7, "grace", "shipped", 175]))
         self.wait(0.2)
 
-        # Update the index — remove old arrows, insert key, rebuild.
-        old_arrows = list(index._arrows)
-        self.play(*[FadeOut(a, run_time=0.3) for a in old_arrows])
+        # Update the index in three smooth phases:
+        #   1. Fade out old arrows
+        #   2. Smooth tree insert (cells slide, median floats up on split)
+        #   3. Rebuild and draw new arrows
 
+        # Phase 1: fade out old arrows.
+        self.play(*[FadeOut(a, run_time=0.3) for a in index._arrows])
+        for a in list(index._arrows):
+            if a in index.submobjects:
+                index -= a
+        index._arrows.clear()
+
+        # Phase 2: smooth B-tree insert (reuses MBTree's animation).
         new_row = table.get_row(len(table) - 1)
-        index.insert_key(175, new_row)
+        index._key_to_row[175] = new_row
+        self.play(index.tree.animate.insert(175))
 
-        self.play(
-            FadeIn(index.tree, run_time=0.3),
-            *[Create(a, run_time=0.5) for a in index._arrows],
-        )
+        # Phase 3: reposition tree, rebuild arrows, draw them in.
+        index._position_beside_table()
+        index._rebuild_arrows()
+        self.play(*[Create(a, run_time=0.4) for a in index._arrows])
         self.wait(1.0)
