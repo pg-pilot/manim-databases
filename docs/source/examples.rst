@@ -60,7 +60,7 @@ column.  Demonstrates:
 04 — Query execution plan
 --------------------------
 
-**File:** ``examples/04_query_plan.py`` — Scene: ``QueryPlanDemo``
+**File:** ``examples/03_query_plan.py`` — Scene: ``QueryPlanDemo``
 
 Builds a PostgreSQL ``EXPLAIN (FORMAT JSON)`` tree with Aggregate → Hash Join
 → (Seq Scan, Hash → Index Scan).  Demonstrates:
