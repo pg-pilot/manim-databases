@@ -22,15 +22,19 @@ MBTree
    :members:
    :undoc-members: False
 
+MIndex
+^^^^^^
+
+.. autoclass:: manim_databases.MIndex
+   :members:
+   :undoc-members: False
+
 Stubs
 ^^^^^
 
 The following mobjects are planned but not yet implemented. They export a
 stable public API that raises ``NotImplementedError`` — this keeps the
 namespace consistent from day one.
-
-.. autoclass:: manim_databases.MIndex
-   :members:
 
 .. autoclass:: manim_databases.MQueryPlan
    :members:
@@ -55,5 +59,9 @@ Each mobject has a companion style class with ``DEFAULT``, ``BLUE``,
    :no-index:
 
 .. autoclass:: manim_databases.MBTreeStyle
+   :members:
+   :no-index:
+
+.. autoclass:: manim_databases.MIndexStyle
    :members:
    :no-index:

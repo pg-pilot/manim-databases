@@ -222,28 +222,51 @@ class MBTreeStyle:
 
 
 class MIndexStyle:
-    """Style configuration for :class:`~manim_databases.m_index.m_index.MIndex`."""
+    """Style configuration for :class:`~manim_databases.m_index.m_index.MIndex`.
+
+    Attributes
+    ----------
+    DEFAULT, BLUE, PURPLE, GREEN
+        Predefined style variants matching the rest of the library.
+    """
 
     class _DefaultStyle:
+        """Default index style — delegates tree appearance to MBTreeStyle."""
+
         def __init__(self):
-            self.entry: dict = {
-                "color": WHITE,
-                "stroke_width": 4,
-                "width": 2.5,
-                "height": 0.5,
-            }
-            self.key: dict = {
-                "color": WHITE,
-                "font": "Cascadia Code",
-                "font_size": 20,
-                "disable_ligatures": True,
-            }
-            self.pointer: dict = {
+            self.tree: MBTreeStyle._DefaultStyle = MBTreeStyle.DEFAULT
+            self.arrow: dict = {
                 "color": GRAY,
-                "stroke_width": 4,
+                "stroke_width": 1.5,
+                "stroke_opacity": 0.3,
+                "tip_length": 0.12,
+                "buff": 0.06,
             }
+            # Layout
+            self.gap: float = 1.2  # horizontal gap between tree and table
+            # Animation
+            self.path_highlight_color: ManimColor = YELLOW
+            self.found_color: ManimColor = GREEN_B
+
+    class _BlueStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.tree = MBTreeStyle.BLUE
+
+    class _PurpleStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.tree = MBTreeStyle.PURPLE
+
+    class _GreenStyle(_DefaultStyle):
+        def __init__(self):
+            super().__init__()
+            self.tree = MBTreeStyle.GREEN
 
     DEFAULT = _DefaultStyle()
+    BLUE = _BlueStyle()
+    PURPLE = _PurpleStyle()
+    GREEN = _GreenStyle()
 
 
 class MQueryPlanStyle:
