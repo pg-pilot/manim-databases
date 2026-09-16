@@ -15,6 +15,11 @@ three lookups, phrased as questions anyone can ask:
    value. Both columns: one search path. Leading column alone: one path.
    Trailing column alone: no path — sweep every key.
 
+Each act ends with a *scale card*: the same questions at 1,000,000 prices
+(5,000 tickers × 200 days), one bar per query on a shared linear scale, so
+a direct lookup reads as a dot and a full scan as a wall. Act 1 also shows
+the scan multiplied by every price, which overflows the frame.
+
 The closing card states the equivalence: the nested map is the same shape
 as the composite index, and the leading-column rule is the ticker walk.
 
@@ -36,6 +41,7 @@ BG = "#1e1e2e"
 TXT = "#cdd6f4"
 BLUE = "#89b4fa"
 GREEN = "#a6e3a1"
+RED = "#f38ba8"
 PEACH = "#fab387"
 MAUVE = "#cba6f7"
 YELLOW = "#f9e2af"
@@ -44,6 +50,9 @@ SURFACE = "#313244"
 OVERLAY = "#45475a"
 
 FONT = "Cascadia Code"  # registered by manim_databases on import
+
+SERIES_TITLE = "Accidental Computer Science"
+EPISODE = "#1 — the Map that was secretly\na database index"
 
 
 def nolig(code: str) -> str:
@@ -77,6 +86,11 @@ LIST_ORDER = [
 ]
 TARGET = ("MSFT", "Tue")
 CODE_SIZE = 22
+
+# The scale card's "real" dataset.
+BIG_TICKERS = 5_000
+BIG_DAYS = 200
+BIG_N = BIG_TICKERS * BIG_DAYS  # 1,000,000 prices
 
 
 def tree_key(ticker, day):
@@ -115,6 +129,7 @@ class NestedMapVsCompositeIndex(Scene):
     def construct(self):
         self.camera.background_color = BG
         self.counter = None
+        self.intro()
         self.act_find()
         self.act_map()
         self.act_index()
@@ -197,6 +212,105 @@ class NestedMapVsCompositeIndex(Scene):
         bottom = self.counter.get_top()[1]
         mob.set_y((top + bottom) / 2)
 
+    def fade_data(self, keep):
+        """Fade everything except the header and counter (and ``keep``)."""
+        keep = set(keep)
+        gone = [m for m in self.mobjects if m not in keep and m is not self.counter]
+        if gone:
+            self.play(*[FadeOut(m) for m in gone], run_time=0.4)
+
+    # ── scale card ──────────────────────────────────────────────────
+
+    def scale_card(self, header, rows):
+        """The same queries at BIG_N prices, one growing bar per query.
+
+        ``rows`` is a list of ``(label, count, color)``. Bars share one
+        linear scale where BIG_N spans the full track, so a direct lookup
+        is a dot and a full scan is a wall. Counts above BIG_N overflow
+        the frame on purpose.
+        """
+        title = Text(
+            f"at {BIG_N:,} prices\n({BIG_TICKERS:,} tickers × {BIG_DAYS} days)",
+            font=FONT,
+            font_size=22,
+            color=MAUVE,
+            line_spacing=0.8,
+        )
+        track_w = config.frame_width - 1.2
+        left_x = -track_w / 2
+        right_x = track_w / 2
+        # The number gets its own slot at the right of the bar line, so a
+        # full bar never runs under it and labels can use the whole line.
+        num_slot = Text(f"{BIG_N * BIG_N:,}", font=FONT, font_size=22).width + 0.3
+        bar_track = track_w - num_slot
+
+        lines = VGroup()
+        for label, _count, _color in rows:
+            lines.add(Text(label, font=FONT, font_size=22, color=TXT))
+        lines.arrange(DOWN, buff=0.62, aligned_edge=LEFT)
+        card = VGroup(title, lines).arrange(DOWN, buff=0.5, aligned_edge=LEFT)
+        card.set_x(left_x, LEFT)
+        self.between_header_and_counter(header, card)
+        card.shift(UP * 0.15)
+
+        self.play(FadeIn(title), self.tick(f"n = {BIG_N:,}"))
+        self.wait(0.3)
+
+        for line, (_label, count, color) in zip(lines, rows, strict=True):
+            overflow = count > BIG_N
+            # Overflow bars leave room for the off-chart chevrons.
+            width = (
+                bar_track - 0.6 if overflow else max(bar_track * count / BIG_N, 0.06)
+            )
+            y = line.get_bottom()[1] - 0.22
+            tracker = ValueTracker(0.0)
+
+            def make_bar(w=width, y=y, color=color, tr=tracker):
+                bar = Rectangle(
+                    width=max(w * tr.get_value(), 0.001),
+                    height=0.2,
+                    fill_color=color,
+                    fill_opacity=0.9,
+                    stroke_width=0,
+                )
+                bar.move_to([left_x, y, 0], aligned_edge=LEFT)
+                return bar
+
+            def make_num(c=count, color=color, tr=tracker, y=y):
+                n = Text(
+                    f"{int(round(c * tr.get_value())):,}",
+                    font=FONT,
+                    font_size=22,
+                    color=color,
+                )
+                n.move_to([right_x, y, 0], aligned_edge=RIGHT)
+                return n
+
+            bar = always_redraw(make_bar)
+            num = always_redraw(make_num)
+            self.add(bar, num)
+            run = 1.4 if count >= BIG_N else 0.7
+            self.play(FadeIn(line, run_time=0.3))
+            self.play(tracker.animate.set_value(1.0), run_time=run, rate_func=linear)
+            bar.clear_updaters()
+            num.clear_updaters()
+            if overflow:
+                off = Text("»»", font=FONT, font_size=22, color=color)
+                off.next_to(bar, RIGHT, buff=0.08)
+                self.play(FadeIn(off, shift=RIGHT * 0.2), run_time=0.3)
+            self.wait(0.35)
+        self.wait(1.6)
+
+    # ── intro card ──────────────────────────────────────────────────
+
+    def intro(self):
+        series = Text(SERIES_TITLE, font=FONT, font_size=30, color=TEAL)
+        ep = Text(EPISODE, font=FONT, font_size=22, color=TXT, line_spacing=0.8)
+        card = VGroup(series, ep).arrange(DOWN, buff=0.35)
+        self.play(FadeIn(card, shift=UP * 0.2), run_time=0.6)
+        self.wait(1.6)
+        self.play(FadeOut(card), run_time=0.4)
+
     # ── act 1: array.find() ─────────────────────────────────────────
 
     def act_find(self):
@@ -237,6 +351,15 @@ class NestedMapVsCompositeIndex(Scene):
             self.tick("O(n) inside O(n)", PEACH),
         )
         self.wait(2.0)
+
+        self.fade_data(keep=[header])
+        self.scale_card(
+            header,
+            [
+                ("one price — up to", BIG_N, RED),
+                ("…and for every price", BIG_N * BIG_N, RED),
+            ],
+        )
         self.clear()
 
     # ── act 2: Map, then nested Map ─────────────────────────────────
@@ -328,6 +451,15 @@ class NestedMapVsCompositeIndex(Scene):
             self.tick("hops: 6 = 2 × every ticker", PEACH),
         )
         self.wait(2.2)
+
+        self.fade_data(keep=[header])
+        self.scale_card(
+            header,
+            [
+                ('"MSFT on Tue"', 2, GREEN),
+                ('"every stock on Tue" — 2 × tickers', 2 * BIG_TICKERS, PEACH),
+            ],
+        )
         self.clear()
 
     # ── act 3: composite index ──────────────────────────────────────
@@ -421,6 +553,17 @@ class NestedMapVsCompositeIndex(Scene):
         self.play(FadeIn(costly, shift=UP * 0.2), self.tick("every key visited", PEACH))
         self.play(FadeIn(pg18))
         self.wait(2.5)
+
+        self.fade_data(keep=[header])
+        self.scale_card(
+            header,
+            [
+                ('"MSFT on Tue" — 3 nodes', 3, GREEN),
+                ('"MSFT" — 3 nodes + 200 rows', 203, GREEN),
+                ('"every stock on Tue" — sweep', BIG_N, RED),
+                ("…with PG 18 skip scan", BIG_TICKERS, PEACH),
+            ],
+        )
         self.clear()
 
     # ── closing card ────────────────────────────────────────────────
@@ -438,7 +581,9 @@ class NestedMapVsCompositeIndex(Scene):
         card = VGroup(top, eq, bottom).arrange(DOWN, buff=0.3)
         legend = VGroup(cheap, costly).arrange(DOWN, buff=0.2, aligned_edge=LEFT)
         VGroup(card, legend).arrange(DOWN, buff=0.8).move_to(ORIGIN)
+        footer = Text(f"{SERIES_TITLE} · #1", font=FONT, font_size=20, color=MAUVE)
+        footer.to_edge(DOWN, buff=0.5)
         self.play(FadeIn(card, shift=UP * 0.2))
         self.wait(0.6)
-        self.play(FadeIn(legend))
+        self.play(FadeIn(legend), FadeIn(footer))
         self.wait(3.0)
