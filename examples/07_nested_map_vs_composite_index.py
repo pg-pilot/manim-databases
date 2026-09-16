@@ -6,8 +6,8 @@ for three tickers over three days — so the viewer sees one dataset under
 three lookups, phrased as questions anyone can ask:
 
 1. ``array.find()`` — "MSFT on Tuesday?" A cursor walks the list one row
-   at a time with a compare counter, then the "and this ran once for every
-   price" multiplier.
+   at a time with a compare counter, then the "and this ran for every
+   price" multiplier (worst case — ``find`` stops at the first match).
 2. ``Map`` — one hop for a flat map; two hops for the nested
    ``Map<ticker, Map<day, price>>``; and the expensive question
    ("every stock on Tuesday") that has to visit every ticker.
@@ -226,7 +226,7 @@ class NestedMapVsCompositeIndex(Scene):
         self.wait(0.8)
 
         multiplier = Text(
-            "…and it ran once\nfor every price:\n\n9 × 9 = 81",
+            "…and it ran for\nevery price:\n\nup to 9 × 9 = 81",
             font=FONT,
             font_size=24,
             color=PEACH,
