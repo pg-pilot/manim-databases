@@ -1,24 +1,26 @@
-"""The same nine points, three shapes: array.find(), nested Map, composite index.
+"""Nine stock prices, three shapes: array.find(), nested Map, composite index.
 
 Companion animation for the "hand-rolled Maps were secretly teaching me
-composite indexes" story. Every act reuses the same data — series A/B/C
-at times 1/2/3 — so the viewer sees one dataset under three lookups:
+composite indexes" story. Every act reuses the same data — closing prices
+for three tickers over three days — so the viewer sees one dataset under
+three lookups, phrased as questions anyone can ask:
 
-1. ``array.find()`` — a cursor walks the array one cell at a time with a
-   compare counter, then the "and this ran once per point" multiplier.
+1. ``array.find()`` — "MSFT on Tuesday?" A cursor walks the list one row
+   at a time with a compare counter, then the "and this ran once for every
+   price" multiplier.
 2. ``Map`` — one hop for a flat map; two hops for the nested
-   ``Map<series, Map<ts, Point[]>>``; and the expensive question
-   ("every series at time 2") that has to visit every outer entry.
-3. ``INDEX (series_id, ts)`` — an :class:`MBTree` keyed by the composite
-   value. Both columns: one search path. Leading column alone: one path,
-   then neighbours. Trailing column alone: no path — sweep every key.
+   ``Map<ticker, Map<day, price>>``; and the expensive question
+   ("every stock on Tuesday") that has to visit every ticker.
+3. ``INDEX (ticker, day)`` — an :class:`MBTree` keyed by the composite
+   value. Both columns: one search path. Leading column alone: one path.
+   Trailing column alone: no path — sweep every key.
 
-The closing card states the equivalence: the nested map *is* the composite
-index, and the leading-column rule is the outer-map walk.
+The closing card states the equivalence: the nested map is the same shape
+as the composite index, and the leading-column rule is the ticker walk.
 
 Square frame for social feeds. Run with:
-    manim -ql -r 480,480  examples/07_nested_map_vs_composite_index.py NestedMapVsCompositeIndex
-    manim -qh -r 1080,1080 examples/07_nested_map_vs_composite_index.py NestedMapVsCompositeIndex
+    manim -ql -r 480,480 examples/07_nested_map_vs_composite_index.py NestedMapVsCompositeIndex
+    manim -r 1080,1080 --fps 30 examples/07_nested_map_vs_composite_index.py NestedMapVsCompositeIndex
 """
 
 from manim import *
@@ -59,15 +61,30 @@ def nolig(code: str) -> str:
     return "".join(out)
 
 
-SERIES = ["A", "B", "C"]
-TIMES = [1, 2, 3]
-# Insertion order of the array in act 1 — deliberately unsorted, target last.
-ARRAY_ORDER = ["C2", "A1", "B3", "C1", "A3", "B1", "A2", "C3", "B2"]
-TARGET = "B2"
+TICKERS = ["AAPL", "MSFT", "NVDA"]
+DAYS = ["Mon", "Tue", "Wed"]  # alphabetical == chronological, so keys sort right
+# Order of the list in act 1 — deliberately unsorted, target last.
+LIST_ORDER = [
+    ("NVDA", "Tue"),
+    ("AAPL", "Mon"),
+    ("MSFT", "Wed"),
+    ("NVDA", "Mon"),
+    ("AAPL", "Wed"),
+    ("MSFT", "Mon"),
+    ("AAPL", "Tue"),
+    ("NVDA", "Wed"),
+    ("MSFT", "Tue"),
+]
+TARGET = ("MSFT", "Tue")
+CODE_SIZE = 22
+
+
+def tree_key(ticker, day):
+    return f"{ticker}\n{day}"
 
 
 class Ep1TreeStyle(MBTreeStyle._DefaultStyle):
-    """MBTree style on the same palette as the rest of the scene."""
+    """MBTree style on the same palette, with two-line (ticker / day) keys."""
 
     def __init__(self):
         super().__init__()
@@ -76,17 +93,20 @@ class Ep1TreeStyle(MBTreeStyle._DefaultStyle):
             "fill_color": SURFACE,
             "fill_opacity": 1,
             "stroke_width": 4,
-            "width": 0.8,
-            "height": 0.8,
+            "width": 1.05,
+            "height": 1.0,
         }
         self.key = {
             "color": TXT,
             "font": FONT,
-            "font_size": 28,
+            "font_size": 24,
             "disable_ligatures": True,
             "weight": BOLD,
+            "line_spacing": 0.6,
         }
         self.edge = {"color": OVERLAY, "stroke_width": 4}
+        self.horizontal_gap = 0.3
+        self.vertical_gap = 1.8
         self.path_highlight_color = YELLOW
         self.found_color = GREEN
 
@@ -102,10 +122,10 @@ class NestedMapVsCompositeIndex(Scene):
 
     # ── building blocks ──────────────────────────────────────────────
 
-    def cell(self, label, size=0.7, color=OVERLAY, font_size=28):
+    def cell(self, label, width, height=0.46, color=OVERLAY, font_size=24):
         box = Rectangle(
-            width=size,
-            height=size,
+            width=width,
+            height=height,
             color=color,
             stroke_width=4,
             fill_color=SURFACE,
@@ -115,22 +135,37 @@ class NestedMapVsCompositeIndex(Scene):
         text.move_to(box)
         return VGroup(box, text)
 
+    def fit_width(self, labels, font_size=24, pad=0.4):
+        """Cell width that fits the widest label — derived, never guessed."""
+        return max(Text(s, font=FONT, font_size=font_size).width for s in labels) + pad
+
+    def price_list(self):
+        """The nine prices as rows of (ticker | day), stacked like a table."""
+        tw = self.fit_width(TICKERS)
+        dw = self.fit_width(DAYS)
+        return VGroup(
+            *[
+                VGroup(self.cell(t, tw), self.cell(d, dw)).arrange(RIGHT, buff=0)
+                for t, d in LIST_ORDER
+            ]
+        ).arrange(DOWN, buff=0.03)
+
     def header(self, title, code):
         t = Text(title, font=FONT, font_size=34, color=BLUE)
-        c = Text(nolig(code), font=FONT, font_size=26, color=GREEN)
-        group = VGroup(t, c).arrange(DOWN, buff=0.25)
-        group.to_edge(UP, buff=0.45)
+        c = Text(nolig(code), font=FONT, font_size=CODE_SIZE, color=GREEN)
+        group = VGroup(t, c).arrange(DOWN, buff=0.22)
+        group.to_edge(UP, buff=0.4)
         return group
 
     def set_code(self, header, code):
-        new = Text(nolig(code), font=FONT, font_size=26, color=GREEN)
+        new = Text(nolig(code), font=FONT, font_size=CODE_SIZE, color=GREEN)
         new.move_to(header[1])
         header[1].become(new)
         return FadeIn(header[1], run_time=0.4)
 
     def new_counter(self, text, color=YELLOW):
         self.counter = Text(text, font=FONT, font_size=30, color=color)
-        self.counter.to_edge(DOWN, buff=0.6)
+        self.counter.to_edge(DOWN, buff=0.5)
         return self.counter
 
     def tick(self, text, color=YELLOW):
@@ -142,49 +177,64 @@ class NestedMapVsCompositeIndex(Scene):
         return self.counter.animate.set_opacity(1)
 
     def cursor_for(self, mob):
-        return SurroundingRectangle(mob, color=YELLOW, stroke_width=6, buff=0.06)
+        return SurroundingRectangle(mob, color=YELLOW, stroke_width=6, buff=0.05)
 
     def mark_found(self, mob):
-        return SurroundingRectangle(mob, color=GREEN, stroke_width=6, buff=0.06)
+        return SurroundingRectangle(mob, color=GREEN, stroke_width=6, buff=0.05)
 
     def note(self, text, color=PEACH, font_size=24):
         n = Text(text, font=FONT, font_size=font_size, color=color)
-        n.next_to(self.counter, UP, buff=0.35)
+        n.next_to(self.counter, UP, buff=0.3)
         return n
 
     def clear(self):
         self.play(*[FadeOut(m) for m in self.mobjects], run_time=0.5)
         self.counter = None
 
+    def between_header_and_counter(self, header, mob):
+        """Centre ``mob`` in the band between the header and the counter."""
+        top = header.get_bottom()[1]
+        bottom = self.counter.get_top()[1]
+        mob.set_y((top + bottom) / 2)
+
     # ── act 1: array.find() ─────────────────────────────────────────
 
     def act_find(self):
-        header = self.header("1. array.find()", "points.find(p => p.id === 'B2')")
-        cells = VGroup(*[self.cell(k) for k in ARRAY_ORDER]).arrange(RIGHT, buff=0.06)
-        cells.move_to(ORIGIN)
+        header = self.header("1. array.find()", "prices.find(p => p.id === 'MSFT:Tue')")
+        rows = self.price_list()
         counter = self.new_counter("compares: 0")
+        self.between_header_and_counter(header, rows)
+        rows.shift(RIGHT * 1.6)
+        question = Text('"MSFT on\nTuesday?"', font=FONT, font_size=28, color=TXT)
+        question.next_to(rows, LEFT, buff=0.9)
 
-        self.play(FadeIn(header), FadeIn(cells), FadeIn(counter))
-        self.wait(0.6)
+        self.play(FadeIn(header), FadeIn(rows), FadeIn(counter), FadeIn(question))
+        self.wait(0.8)
 
-        cursor = self.cursor_for(cells[0])
+        cursor = self.cursor_for(rows[0])
         self.play(Create(cursor), run_time=0.3)
-        found = None
-        for i, key in enumerate(ARRAY_ORDER):
+        for i, key in enumerate(LIST_ORDER):
             self.play(
-                cursor.animate.move_to(cells[i]),
+                cursor.animate.move_to(rows[i]),
                 self.tick(f"compares: {i + 1}"),
                 run_time=0.22,
             )
             if key == TARGET:
-                found = self.mark_found(cells[i])
+                found = self.mark_found(rows[i])
                 self.play(FadeOut(cursor), FadeIn(found), run_time=0.3)
                 break
         self.wait(0.8)
 
-        multiplier = self.note("…and it ran once per point:  9 × 9 = 81")
+        multiplier = Text(
+            "…and it ran once\nfor every price:\n\n9 × 9 = 81",
+            font=FONT,
+            font_size=24,
+            color=PEACH,
+        ).move_to(question)
         self.play(
-            FadeIn(multiplier, shift=UP * 0.2), self.tick("O(n) inside O(n)", PEACH)
+            FadeOut(question),
+            FadeIn(multiplier, shift=UP * 0.2),
+            self.tick("O(n) inside O(n)", PEACH),
         )
         self.wait(2.0)
         self.clear()
@@ -192,48 +242,50 @@ class NestedMapVsCompositeIndex(Scene):
     # ── act 2: Map, then nested Map ─────────────────────────────────
 
     def act_map(self):
-        header = self.header("2. Map", "points.get('B2')")
-        cells = VGroup(*[self.cell(k) for k in ARRAY_ORDER]).arrange(RIGHT, buff=0.06)
-        cells.move_to(ORIGIN)
+        header = self.header("2. Map", "prices.get('MSFT:Tue')")
+        rows = self.price_list()
         counter = self.new_counter("hops: 0")
-        self.play(FadeIn(header), FadeIn(cells), FadeIn(counter))
+        self.between_header_and_counter(header, rows)
+        rows.shift(RIGHT * 1.6)
+        self.play(FadeIn(header), FadeIn(rows), FadeIn(counter))
 
-        target_cell = cells[ARRAY_ORDER.index(TARGET)]
-        key = Text("'B2'", font=FONT, font_size=28, color=YELLOW)
-        key.next_to(cells, UP, buff=0.9)
-        arrow = Arrow(key.get_bottom(), target_cell.get_top(), color=YELLOW, buff=0.1)
+        target_row = rows[LIST_ORDER.index(TARGET)]
+        key = Text("'MSFT:Tue'", font=FONT, font_size=26, color=YELLOW)
+        key.next_to(rows, LEFT, buff=0.9).match_y(rows)
+        arrow = Arrow(key.get_right(), target_row.get_left(), color=YELLOW, buff=0.15)
         self.play(FadeIn(key))
         self.play(GrowArrow(arrow), self.tick("hops: 1"), run_time=0.5)
-        found = self.mark_found(target_cell)
+        found = self.mark_found(target_row)
         self.play(FadeIn(found), run_time=0.3)
         self.wait(1.2)
-        self.play(FadeOut(cells), FadeOut(key), FadeOut(arrow), FadeOut(found))
+        self.play(FadeOut(rows), FadeOut(key), FadeOut(arrow), FadeOut(found))
 
-        # nested: Map<series, Map<ts, Point[]>>
-        self.play(self.set_code(header, "Map<series, Map<ts, Point[]>>"))
-        rows = VGroup()
+        # nested: Map<ticker, Map<day, price>>
+        self.play(self.set_code(header, "Map<ticker, Map<day, price>>"))
+        tw = self.fit_width(TICKERS)
+        dw = self.fit_width(DAYS)
+        grid = VGroup()
         outer_cells, inner_rows = [], []
-        for s in SERIES:
-            outer = self.cell(s, color=BLUE)
-            inner = VGroup(*[self.cell(str(t)) for t in TIMES]).arrange(
+        for t in TICKERS:
+            outer = self.cell(t, tw, height=0.6, color=BLUE)
+            inner = VGroup(*[self.cell(d, dw, height=0.6) for d in DAYS]).arrange(
                 RIGHT, buff=0.06
             )
-            row = VGroup(outer, inner).arrange(RIGHT, buff=1.1)
-            rows.add(row)
+            grid.add(VGroup(outer, inner).arrange(RIGHT, buff=1.0))
             outer_cells.append(outer)
             inner_rows.append(inner)
-        rows.arrange(DOWN, buff=0.35).move_to(ORIGIN)
+        grid.arrange(DOWN, buff=0.35).move_to(ORIGIN)
         arrows = VGroup(
             *[
                 Arrow(o.get_right(), r.get_left(), color=OVERLAY, buff=0.1)
                 for o, r in zip(outer_cells, inner_rows, strict=True)
             ]
         )
-        self.play(FadeIn(rows), Create(arrows), self.tick("hops: 0"))
+        self.play(FadeIn(grid), Create(arrows), self.tick("hops: 0"))
         self.wait(0.6)
 
         # query 1: both keys — two hops
-        self.play(self.set_code(header, "m.get('B').get(2)"))
+        self.play(self.set_code(header, "m.get('MSFT').get('Tue')"))
         cursor = self.cursor_for(outer_cells[1])
         self.play(Create(cursor), self.tick("hops: 1"), run_time=0.3)
         self.wait(0.3)
@@ -242,21 +294,20 @@ class NestedMapVsCompositeIndex(Scene):
         )
         found = self.mark_found(inner_rows[1][1])
         self.play(FadeOut(cursor), FadeIn(found), run_time=0.3)
-        cheap = self.note("cheap: series, or series + ts", GREEN)
+        cheap = self.note('cheap: "MSFT", or "MSFT on Tue"', GREEN)
         self.play(FadeIn(cheap, shift=UP * 0.2))
         self.wait(1.5)
         self.play(FadeOut(found), FadeOut(cheap))
 
-        # query 2: trailing key alone — walk every outer entry
+        # query 2: trailing key alone — walk every ticker
         self.play(
-            self.set_code(header, "for ([s, byTs] of m) byTs.get(2)"),
+            self.set_code(header, "for ([t, byDay] of m) byDay.get('Tue')"),
             self.tick("hops: 0"),
         )
         hops = 0
-        founds = []
         cursor = self.cursor_for(outer_cells[0])
         self.play(Create(cursor), run_time=0.2)
-        for i in range(len(SERIES)):
+        for i in range(len(TICKERS)):
             hops += 1
             self.play(
                 cursor.animate.move_to(outer_cells[i]),
@@ -269,13 +320,12 @@ class NestedMapVsCompositeIndex(Scene):
                 self.tick(f"hops: {hops}"),
                 run_time=0.3,
             )
-            f = self.mark_found(inner_rows[i][1])
-            founds.append(f)
-            self.play(FadeIn(f), run_time=0.15)
+            self.play(FadeIn(self.mark_found(inner_rows[i][1])), run_time=0.15)
         self.play(FadeOut(cursor), run_time=0.2)
-        costly = self.note("costly: ts alone — visit every series", PEACH)
+        costly = self.note('costly: "every stock on Tue"', PEACH)
         self.play(
-            FadeIn(costly, shift=UP * 0.2), self.tick("hops: 6 = 2 × #series", PEACH)
+            FadeIn(costly, shift=UP * 0.2),
+            self.tick("hops: 6 = 2 × every ticker", PEACH),
         )
         self.wait(2.2)
         self.clear()
@@ -283,28 +333,36 @@ class NestedMapVsCompositeIndex(Scene):
     # ── act 3: composite index ──────────────────────────────────────
 
     def act_index(self):
-        header = self.header("3. Composite index", "INDEX (series_id, ts)")
+        header = self.header("3. Composite index", "INDEX (ticker, day)")
         tree = MBTree.from_structure(
             {
-                "keys": ["A3", "B3"],
+                "keys": [tree_key("AAPL", "Wed"), tree_key("MSFT", "Wed")],
                 "children": [
-                    {"keys": ["A1", "A2"]},
-                    {"keys": ["B1", "B2"]},
-                    {"keys": ["C1", "C2", "C3"]},
+                    {"keys": [tree_key("AAPL", "Mon"), tree_key("AAPL", "Tue")]},
+                    {"keys": [tree_key("MSFT", "Mon"), tree_key("MSFT", "Tue")]},
+                    {
+                        "keys": [
+                            tree_key("NVDA", "Mon"),
+                            tree_key("NVDA", "Tue"),
+                            tree_key("NVDA", "Wed"),
+                        ]
+                    },
                 ],
             },
             order=4,
             style=Ep1TreeStyle(),
+            max_width=config.frame_width - 0.8,
         )
-        tree.move_to(ORIGIN)
+        tree.move_to(UP * 0.5)
         counter = self.new_counter("nodes: 0")
         self.play(FadeIn(header), Create(tree), FadeIn(counter))
         self.wait(0.6)
 
         # query 1: both columns — one search path
-        self.play(self.set_code(header, "WHERE series_id='B' AND ts=2"))
-        path = tree.get_search_path("B2")
-        self.play(tree.animate.search("B2"), self.tick(f"nodes: {len(path)}"))
+        self.play(self.set_code(header, "WHERE ticker='MSFT' AND day='Tue'"))
+        target = tree_key(*TARGET)
+        path = tree.get_search_path(target)
+        self.play(tree.animate.search(target), self.tick(f"nodes: {len(path)}"))
         node, idx = path[-1]
         found = self.mark_found(node.get_key_target(idx))
         self.play(FadeIn(found), run_time=0.3)
@@ -313,15 +371,17 @@ class NestedMapVsCompositeIndex(Scene):
         self.wait(1.5)
         self.play(FadeOut(found), FadeOut(cheap))
 
-        # query 2: leading column alone — one path, then neighbours
-        self.play(self.set_code(header, "WHERE series_id='B'"), self.tick("nodes: 0"))
-        path = tree.get_search_path("B1")
-        self.play(tree.animate.search("B1"), self.tick(f"nodes: {len(path)}"))
-        founds = []
-        for node in tree.get_nodes():
-            for i, text in enumerate(node.key_texts):
-                if text.text.startswith("B"):
-                    founds.append(self.mark_found(node.get_key_target(i)))
+        # query 2: leading column alone — one path
+        self.play(self.set_code(header, "WHERE ticker='MSFT'"), self.tick("nodes: 0"))
+        first = tree_key("MSFT", "Mon")
+        path = tree.get_search_path(first)
+        self.play(tree.animate.search(first), self.tick(f"nodes: {len(path)}"))
+        founds = [
+            self.mark_found(node.get_key_target(i))
+            for node in tree.get_nodes()
+            for i, key in enumerate(node.keys)
+            if key.startswith("MSFT")
+        ]
         self.play(*[FadeIn(f) for f in founds], run_time=0.4)
         cheap = self.note("cheap: leading column — one path", GREEN)
         self.play(FadeIn(cheap, shift=UP * 0.2))
@@ -329,36 +389,33 @@ class NestedMapVsCompositeIndex(Scene):
         self.play(*[FadeOut(f) for f in founds], FadeOut(cheap))
 
         # query 3: trailing column alone — no path, sweep every key
-        self.play(self.set_code(header, "WHERE ts=2"), self.tick("compares: 0"))
+        self.play(self.set_code(header, "WHERE day='Tue'"), self.tick("compares: 0"))
         all_keys = [
-            (node, i) for node in tree.get_nodes() for i in range(len(node.key_texts))
+            (node, i, key)
+            for node in tree.get_nodes()
+            for i, key in enumerate(node.keys)
         ]
         cursor = self.cursor_for(all_keys[0][0].get_key_target(0))
         self.play(Create(cursor), run_time=0.2)
-        founds = []
-        for n, (node, i) in enumerate(all_keys):
-            target = node.get_key_target(i)
+        for n, (node, i, key) in enumerate(all_keys):
+            target_mob = node.get_key_target(i)
             self.play(
-                cursor.animate.move_to(target),
+                cursor.animate.move_to(target_mob),
                 self.tick(f"compares: {n + 1}"),
                 run_time=0.22,
             )
-            if node.key_texts[i].text.endswith("2"):
-                f = self.mark_found(target)
-                founds.append(f)
-                self.play(FadeIn(f), run_time=0.12)
+            if key.endswith("Tue"):
+                self.play(FadeIn(self.mark_found(target_mob)), run_time=0.12)
         self.play(FadeOut(cursor), run_time=0.2)
-        costly = self.note("costly: ts alone — sweep every key", PEACH)
+        costly = self.note("costly: day alone — sweep every key", PEACH)
         pg18 = VGroup(
             Text(
-                "(PG 18 skip scan: one probe per series —",
+                "(PG 18 skip scan: one probe per ticker —",
                 font=FONT,
                 font_size=20,
                 color=MAUVE,
             ),
-            Text(
-                "the outer-map walk, automated)", font=FONT, font_size=20, color=MAUVE
-            ),
+            Text("the ticker walk, automated)", font=FONT, font_size=20, color=MAUVE),
         ).arrange(DOWN, buff=0.08)
         pg18.next_to(costly, UP, buff=0.25)
         self.play(FadeIn(costly, shift=UP * 0.2), self.tick("every key visited", PEACH))
@@ -369,13 +426,15 @@ class NestedMapVsCompositeIndex(Scene):
     # ── closing card ────────────────────────────────────────────────
 
     def closing(self):
-        top = Text("Map<series, Map<ts, Point[]>>", font=FONT, font_size=30, color=TEAL)
+        top = Text("Map<ticker, Map<day, price>>", font=FONT, font_size=30, color=TEAL)
         eq = Text("is the same shape as", font=FONT, font_size=22, color=TXT)
-        bottom = Text("INDEX (series_id, ts)", font=FONT, font_size=30, color=TEAL)
+        bottom = Text("INDEX (ticker, day)", font=FONT, font_size=30, color=TEAL)
         cheap = Text(
-            "cheap:   series  ·  series + ts", font=FONT, font_size=24, color=GREEN
+            'cheap:   "MSFT"  ·  "MSFT on Tue"', font=FONT, font_size=24, color=GREEN
         )
-        costly = Text("costly:  ts alone", font=FONT, font_size=24, color=PEACH)
+        costly = Text(
+            'costly:  "every stock on Tue"', font=FONT, font_size=24, color=PEACH
+        )
         card = VGroup(top, eq, bottom).arrange(DOWN, buff=0.3)
         legend = VGroup(cheap, costly).arrange(DOWN, buff=0.2, aligned_edge=LEFT)
         VGroup(card, legend).arrange(DOWN, buff=0.8).move_to(ORIGIN)
